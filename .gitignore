@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+apps/**/.next/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+.clasp.json
+.clasprc.json
+*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+prisma/*.db
+
+# Generated code
+src/generated/
+apps/**/generated/
+generated/
+
+# Temporary and exported files
+tmp/
+tmp-*/
+output/
+outputs/
+downloads/
+exports/
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.har
+*.pem
+*.key
+*.crt
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

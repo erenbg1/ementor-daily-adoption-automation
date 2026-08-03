@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "node --check scripts/mentor-adoption-worker.mjs"
+  },
+  "deploy": {
+    "cronSchedule": "0 16,17 * * *",
+    "restartPolicyType": "NEVER",
+    "startCommand": "npm run mentor:adoption -- --run-mode=production"
+  }
+}
