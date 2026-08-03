@@ -19,7 +19,7 @@ function observation(overrides: Partial<MentorIdentityLearningObservation> = {})
     resolvedFirstName: "Ada",
     resolvedLastName: "Lovelace",
     shiftRecordRef: "shift-1",
-    station: "STATION_B",
+    site: "SITE_B",
     ...overrides,
   };
 }
@@ -117,7 +117,7 @@ describe("Mentor identity dictionary learning", () => {
         lastName: "last-hash-1",
         operationalDay: "2026-07-20",
         recordRef: "comparison-1",
-        station: "STATION_B",
+        site: "SITE_B",
       },
     ];
     const shiftRecords: MentorShiftRawRecord[] = [
@@ -126,7 +126,7 @@ describe("Mentor identity dictionary learning", () => {
         firstName: "Ada",
         lastName: "Lovelace",
         localDate: "2026-07-20",
-        location1: "STATION_B",
+        location1: "SITE_B",
         recordRef: "shift-1",
       },
     ];
@@ -151,7 +151,7 @@ describe("Mentor identity dictionary learning", () => {
         resolvedFirstName: "Ada",
         resolvedLastName: "Lovelace",
         shiftRecordRef: "shift-1",
-        station: "STATION_B",
+        site: "SITE_B",
       },
     ]);
   });

@@ -14,7 +14,7 @@ export type MentorIdentityDictionaryEntry = {
   lastHash: string;
   resolvedFirstName: string;
   resolvedLastName: string;
-  primaryStation: string | null;
+  primarySite: string | null;
   firstSeenOperationalDate: Date;
   lastSeenOperationalDate: Date;
   learnedFromOperationalDate: Date;
@@ -34,7 +34,7 @@ export type MentorIdentityLearningEvent = {
   observedLastName: string;
   existingFirstName: string | null;
   existingLastName: string | null;
-  station: string | null;
+  site: string | null;
   distanceKm: number | null;
   comparisonRecordRef: string | null;
   shiftRecordRef: string | null;
@@ -48,7 +48,7 @@ export type MentorIdentityLearningObservation = {
   lastHash: string;
   resolvedFirstName: string;
   resolvedLastName: string;
-  station?: string | null;
+  site?: string | null;
   distanceKm?: number | null;
   comparisonRecordRef?: string | null;
   shiftRecordRef?: string | null;
@@ -72,29 +72,29 @@ export type MentorIdentityLearningDryRunSummary = {
 
 export type MentorIdentityRepository = {
   countDictionaryEntries?(): Promise<number>;
-  createDictionaryEntry(input: CreateMentorIdentityDictionaryEntryInput): Promise<MentorIdentityDictionaryEntry>;
-  createLearningEvent(input: CreateMentorIdentityLearningEventInput): Promise<MentorIdentityLearningEvent>;
+  createDictionaryEntry(input: CreatAdoptionIdentityDictionaryEntryInput): Promise<MentorIdentityDictionaryEntry>;
+  createLearningEvent(input: CreatAdoptionIdentityLearningEventInput): Promise<MentorIdentityLearningEvent>;
   findByHashes(firstHash: string, lastHash: string): Promise<MentorIdentityDictionaryEntry | null>;
   hasPendingConflict?(firstHash: string, lastHash: string): Promise<boolean>;
   incrementConfirmation(input: IncrementMentorIdentityConfirmationInput): Promise<MentorIdentityDictionaryEntry>;
 };
 
-type CreateMentorIdentityDictionaryEntryInput = {
+type CreatAdoptionIdentityDictionaryEntryInput = {
   firstHash: string;
   lastHash: string;
   resolvedFirstName: string;
   resolvedLastName: string;
-  primaryStation: string | null;
+  primarySite: string | null;
   operationalDate: Date;
 };
 
 type IncrementMentorIdentityConfirmationInput = {
   id: string;
   operationalDate: Date;
-  primaryStation: string | null;
+  primarySite: string | null;
 };
 
-type CreateMentorIdentityLearningEventInput = {
+type CreatAdoptionIdentityLearningEventInput = {
   dictionaryId: string | null;
   eventType: MentorIdentityEventType;
   reviewStatus: MentorIdentityReviewStatus;
@@ -105,7 +105,7 @@ type CreateMentorIdentityLearningEventInput = {
   observedLastName: string;
   existingFirstName: string | null;
   existingLastName: string | null;
-  station: string | null;
+  site: string | null;
   distanceKm: number | null;
   comparisonRecordRef: string | null;
   shiftRecordRef: string | null;
@@ -157,14 +157,14 @@ export class PrismaMentorIdentityRepository implements MentorIdentityRepository 
     return Boolean(conflict);
   }
 
-  async createDictionaryEntry(input: CreateMentorIdentityDictionaryEntryInput) {
+  async createDictionaryEntry(input: CreatAdoptionIdentityDictionaryEntryInput) {
     return this.client.mentorIdentityDictionary.create({
       data: {
         firstHash: input.firstHash,
         lastHash: input.lastHash,
         resolvedFirstName: input.resolvedFirstName,
         resolvedLastName: input.resolvedLastName,
-        primaryStation: input.primaryStation,
+        primarySite: input.primarySite,
         firstSeenOperationalDate: input.operationalDate,
         lastSeenOperationalDate: input.operationalDate,
         learnedFromOperationalDate: input.operationalDate,
@@ -180,12 +180,12 @@ export class PrismaMentorIdentityRepository implements MentorIdentityRepository 
       data: {
         confirmationCount: { increment: 1 },
         lastSeenOperationalDate: input.operationalDate,
-        ...(input.primaryStation ? { primaryStation: input.primaryStation } : {}),
+        ...(input.primarySite ? { primarySite: input.primarySite } : {}),
       },
     });
   }
 
-  async createLearningEvent(input: CreateMentorIdentityLearningEventInput) {
+  async createLearningEvent(input: CreatAdoptionIdentityLearningEventInput) {
     return this.client.mentorIdentityLearningEvent.create({
       data: {
         comparisonRecordRef: input.comparisonRecordRef,
@@ -202,7 +202,7 @@ export class PrismaMentorIdentityRepository implements MentorIdentityRepository 
         operationalDate: input.operationalDate,
         reviewStatus: input.reviewStatus,
         shiftRecordRef: input.shiftRecordRef,
-        station: input.station,
+        site: input.site,
         ...(input.dictionaryId ? { dictionary: { connect: { id: input.dictionaryId } } } : {}),
       },
     });
@@ -235,7 +235,7 @@ export async function learnMentorIdentity(
       lastHash: normalized.lastHash,
       resolvedFirstName: normalized.resolvedFirstName,
       resolvedLastName: normalized.resolvedLastName,
-      primaryStation: normalized.station,
+      primarySite: normalized.site,
       operationalDate: normalized.operationalDate,
     });
     const event = await repository.createLearningEvent({
@@ -254,7 +254,7 @@ export async function learnMentorIdentity(
     const dictionaryEntry = await repository.incrementConfirmation({
       id: existing.id,
       operationalDate: normalized.operationalDate,
-      primaryStation: normalized.station,
+      primarySite: normalized.site,
     });
     const event = await repository.createLearningEvent({
       ...eventInputFromObservation(normalized),
@@ -349,7 +349,7 @@ export function buildMentorIdentityLearningObservations(input: {
       resolvedFirstName,
       resolvedLastName,
       shiftRecordRef: match.shiftRecordRef,
-      station: stringValue(comparison.station ?? comparison.location1 ?? shift.location1 ?? shift.station) || null,
+      site: stringValue(comparison.site ?? comparison.location1 ?? shift.location1 ?? shift.site) || null,
     });
   }
 
@@ -381,7 +381,7 @@ class InMemoryMentorIdentityRepository implements MentorIdentityRepository {
     return this.entries.get(dictionaryKey(firstHash, lastHash)) ?? null;
   }
 
-  async createDictionaryEntry(input: CreateMentorIdentityDictionaryEntryInput) {
+  async createDictionaryEntry(input: CreatAdoptionIdentityDictionaryEntryInput) {
     const entry: MentorIdentityDictionaryEntry = {
       confirmationCount: 1,
       firstHash: input.firstHash,
@@ -390,7 +390,7 @@ class InMemoryMentorIdentityRepository implements MentorIdentityRepository {
       lastHash: input.lastHash,
       lastSeenOperationalDate: input.operationalDate,
       learnedFromOperationalDate: input.operationalDate,
-      primaryStation: input.primaryStation,
+      primarySite: input.primarySite,
       resolvedFirstName: input.resolvedFirstName,
       resolvedLastName: input.resolvedLastName,
       status: "ACTIVE",
@@ -407,13 +407,13 @@ class InMemoryMentorIdentityRepository implements MentorIdentityRepository {
 
     entry.confirmationCount += 1;
     entry.lastSeenOperationalDate = input.operationalDate;
-    if (input.primaryStation) {
-      entry.primaryStation = input.primaryStation;
+    if (input.primarySite) {
+      entry.primarySite = input.primarySite;
     }
     return entry;
   }
 
-  async createLearningEvent(input: CreateMentorIdentityLearningEventInput) {
+  async createLearningEvent(input: CreatAdoptionIdentityLearningEventInput) {
     const event = {
       ...input,
       id: `event-${++this.eventCounter}`,
@@ -449,7 +449,7 @@ type NormalizedLearningObservation = Required<
   matchReason: string | null;
   operationalDate: Date;
   shiftRecordRef: string | null;
-  station: string | null;
+  site: string | null;
 };
 
 function normalizeLearningObservation(observation: MentorIdentityLearningObservation): NormalizedLearningObservation {
@@ -475,7 +475,7 @@ function normalizeLearningObservation(observation: MentorIdentityLearningObserva
     resolvedFirstName,
     resolvedLastName,
     shiftRecordRef: stringValue(observation.shiftRecordRef) || null,
-    station: stringValue(observation.station) || null,
+    site: stringValue(observation.site) || null,
   };
 }
 
@@ -491,7 +491,7 @@ function normalizeHashPair(firstHash: string, lastHash: string) {
 
 function eventInputFromObservation(
   observation: NormalizedLearningObservation,
-): Omit<CreateMentorIdentityLearningEventInput, "dictionaryId" | "eventType" | "existingFirstName" | "existingLastName" | "reviewStatus"> {
+): Omit<CreatAdoptionIdentityLearningEventInput, "dictionaryId" | "eventType" | "existingFirstName" | "existingLastName" | "reviewStatus"> {
   return {
     comparisonRecordRef: observation.comparisonRecordRef,
     distanceKm: observation.distanceKm,
@@ -503,7 +503,7 @@ function eventInputFromObservation(
     observedLastName: observation.resolvedLastName,
     operationalDate: observation.operationalDate,
     shiftRecordRef: observation.shiftRecordRef,
-    station: observation.station,
+    site: observation.site,
   };
 }
 

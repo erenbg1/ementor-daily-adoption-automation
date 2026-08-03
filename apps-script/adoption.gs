@@ -1,6 +1,15 @@
-const EMENTOR_ADOPTION_SPREADSHEET_ID_PROPERTY = "EMENTOR_ADOPTION_SPREADSHEET_ID";
-const EMENTOR_ADOPTION_TIME_ZONE = "Europe/Berlin";
-const EMENTOR_ADOPTION_HEADERS = [
+const ADOPTION_SPREADSHEET_ID_PROPERTY = "ADOPTION_SPREADSHEET_ID";
+const ADOPTION_TIME_ZONE_PROPERTY = "ADOPTION_TIME_ZONE";
+const ADOPTION_RUN_HOUR_PROPERTY = "ADOPTION_RUN_HOUR";
+const ADOPTION_SKIP_WEEKDAYS_PROPERTY = "ADOPTION_SKIP_WEEKDAYS";
+const ADOPTION_RAW_IMPORT_SHEET_PROPERTY = "ADOPTION_RAW_IMPORT_SHEET";
+const ADOPTION_EXPECTED_SHEET_PROPERTY = "ADOPTION_EXPECTED_SHEET";
+const ADOPTION_DEFAULT_TIME_ZONE = "Etc/UTC";
+const ADOPTION_DEFAULT_RUN_HOUR = 18;
+const ADOPTION_DEFAULT_SKIP_WEEKDAYS = "0";
+const ADOPTION_DEFAULT_RAW_IMPORT_SHEET = "Adoption_Check";
+const ADOPTION_DEFAULT_EXPECTED_SHEET = "EXPECTED_DRIVERS";
+const ADOPTION_HEADERS = [
   "First Name",
   "Last Name",
   "Vehicle Identifier",
@@ -12,18 +21,18 @@ const EMENTOR_ADOPTION_HEADERS = [
   "Short Trip",
   "Device",
   "Is Supported?",
-  "Station"
+  "Site"
 ];
-const EMENTOR_ADOPTION_HISTORY_SHEET = "ADOPTION_HISTORY";
-const EMENTOR_ADOPTION_EMAIL_DELIVERY_SHEET = "ADOPTION_EMAIL_DELIVERY";
-const EMENTOR_ADOPTION_PER_RECIPIENT_EMAIL_ENABLED_PROPERTY = "EMENTOR_ADOPTION_PER_RECIPIENT_EMAIL_ENABLED";
-const EMENTOR_ADOPTION_EMAIL_RECIPIENTS_PROPERTY = "EMENTOR_ADOPTION_EMAIL_RECIPIENTS";
-const EMENTOR_ADOPTION_EMAIL_RECIPIENTS = [
+const ADOPTION_HISTORY_SHEET = "ADOPTION_HISTORY";
+const ADOPTION_EMAIL_DELIVERY_SHEET = "ADOPTION_EMAIL_DELIVERY";
+const ADOPTION_PER_RECIPIENT_EMAIL_ENABLED_PROPERTY = "ADOPTION_PER_RECIPIENT_EMAIL_ENABLED";
+const ADOPTION_EMAIL_RECIPIENTS_PROPERTY = "ADOPTION_EMAIL_RECIPIENTS";
+const ADOPTION_EMAIL_RECIPIENTS = [
   "Operations Lead <ops-lead@example.com>",
   "Dispatcher <dispatcher@example.com>",
-  "Station Manager <station-manager@example.com>"
+  "Site Manager <site-manager@example.com>"
 ];
-const EMENTOR_ADOPTION_EMAIL_DELIVERY_HEADERS = [
+const ADOPTION_EMAIL_DELIVERY_HEADERS = [
   "Service Date",
   "Recipient Name",
   "Recipient Email",
@@ -35,10 +44,10 @@ const EMENTOR_ADOPTION_EMAIL_DELIVERY_HEADERS = [
   "Subject",
   "Error Message"
 ];
-const EMENTOR_ADOPTION_TEST_EMAIL_RECIPIENTS = [
+const ADOPTION_TEST_EMAIL_RECIPIENTS = [
   { name: "Test Recipient", email: "test-recipient@example.com" }
 ];
-const EMENTOR_ADOPTION_HISTORY_HEADERS = [
+const ADOPTION_HISTORY_HEADERS = [
   "Service Date",
   "Generated At",
   "Run Mode",
@@ -47,20 +56,20 @@ const EMENTOR_ADOPTION_HISTORY_HEADERS = [
   "Overall Checked",
   "Overall Missing",
   "Overall Adoption",
-  "STATION_A Expected",
-  "STATION_A Checked",
-  "STATION_A Missing",
-  "STATION_A Adoption",
-  "STATION_A Missing Drivers",
-  "STATION_A Unmatched Names",
-  "STATION_A Extra Mentor Drivers",
-  "STATION_B Expected",
-  "STATION_B Checked",
-  "STATION_B Missing",
-  "STATION_B Adoption",
-  "STATION_B Missing Drivers",
-  "STATION_B Unmatched Names",
-  "STATION_B Extra Mentor Drivers"
+  "SITE_A Expected",
+  "SITE_A Checked",
+  "SITE_A Missing",
+  "SITE_A Adoption",
+  "SITE_A Missing Drivers",
+  "SITE_A Unmatched Names",
+  "SITE_A Extra Mentor Drivers",
+  "SITE_B Expected",
+  "SITE_B Checked",
+  "SITE_B Missing",
+  "SITE_B Adoption",
+  "SITE_B Missing Drivers",
+  "SITE_B Unmatched Names",
+  "SITE_B Extra Mentor Drivers"
 ];
 
 function doPost(e) {
@@ -84,12 +93,12 @@ function doPost(e) {
       const serviceDate = validateServiceDateValue_(payload.serviceDate);
       lock = LockService.getScriptLock();
       if (!lock.tryLock(30000)) {
-        throw new Error("Another eMentor adoption run is already in progress.");
+        throw new Error("Another adoption run is already in progress.");
       }
 
       const ss = openAdoptionSpreadsheet_();
       const summary = getAdoptionSnapshot_(ss, serviceDate);
-      const submissionSummary = sendAdoptionEmailPerRecipient_(ss, summary, EMENTOR_ADOPTION_TEST_EMAIL_RECIPIENTS, "test");
+      const submissionSummary = sendAdoptionEmailPerRecipient_(ss, summary, ADOPTION_TEST_EMAIL_RECIPIENTS, "test");
       summary.emailSubmission = submissionSummary;
       summary.emailDelivery = getEmailDeliveryLog_(ss, serviceDate);
       return jsonResponse_(summary);
@@ -104,8 +113,8 @@ function doPost(e) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) {
       throw new Error("serviceDate must use YYYY-MM-DD format.");
     }
-    if (serviceDate !== todayBerlin_()) {
-      throw new Error("serviceDate must be today's Europe/Berlin date.");
+    if (serviceDate !== todayReportingDate_()) {
+      throw new Error("serviceDate must match today's configured reporting date.");
     }
     if (!Array.isArray(payload.rows)) {
       throw new Error("rows must be an array.");
@@ -114,17 +123,17 @@ function doPost(e) {
 
     lock = LockService.getScriptLock();
     if (!lock.tryLock(30000)) {
-      throw new Error("Another eMentor adoption run is already in progress.");
+      throw new Error("Another adoption run is already in progress.");
     }
 
     const ss = openAdoptionSpreadsheet_();
     validateExpectedDriversDate_(ss, serviceDate);
-    replaceEMentorCheck_(ss, payload.rows);
+    replaceAdoptionCheck_(ss, payload.rows);
 
-    const summary = buildEMentorAdoptionSummary_(ss, serviceDate);
+    const summary = buildAdoptionSummary_(ss, serviceDate);
     summary.generatedAt = new Date().toISOString();
     summary.runMode = runMode;
-    summary.snapshotTime = "18:00 Europe/Berlin";
+    summary.snapshotTime = snapshotTimeLabel_();
     summary.history = {
       snapshotCreated: false
     };
@@ -149,8 +158,8 @@ function doPost(e) {
 }
 
 function validateAdoptionSignature_(payload) {
-  const secret = PropertiesService.getScriptProperties().getProperty("EMENTOR_ADOPTION_SHARED_SECRET");
-  if (!secret) throw new Error("EMENTOR_ADOPTION_SHARED_SECRET is not configured.");
+  const secret = PropertiesService.getScriptProperties().getProperty("ADOPTION_SHARED_SECRET");
+  if (!secret) throw new Error("ADOPTION_SHARED_SECRET is not configured.");
 
   const signedBody = buildAdoptionSignedBody_(payload);
   const encodedBody = Utilities.base64Encode(signedBody, Utilities.Charset.UTF_8);
@@ -191,9 +200,9 @@ function validateRunMode_(runMode) {
 
 function openAdoptionSpreadsheet_() {
   const spreadsheetId = PropertiesService.getScriptProperties()
-    .getProperty(EMENTOR_ADOPTION_SPREADSHEET_ID_PROPERTY);
+    .getProperty(ADOPTION_SPREADSHEET_ID_PROPERTY);
   if (!spreadsheetId) {
-    throw new Error(EMENTOR_ADOPTION_SPREADSHEET_ID_PROPERTY + " is not configured.");
+    throw new Error(ADOPTION_SPREADSHEET_ID_PROPERTY + " is not configured.");
   }
   return SpreadsheetApp.openById(spreadsheetId);
 }
@@ -207,10 +216,11 @@ function validateServiceDateValue_(serviceDate) {
 }
 
 function validateExpectedDriversDate_(ss, serviceDate) {
-  const sheet = ss.getSheetByName("EXPECTED_DRIVERS");
-  if (!sheet) throw new Error("EXPECTED_DRIVERS sheet is missing.");
+  const expectedSheetName = getScriptProperty_(ADOPTION_EXPECTED_SHEET_PROPERTY, ADOPTION_DEFAULT_EXPECTED_SHEET);
+  const sheet = ss.getSheetByName(expectedSheetName);
+  if (!sheet) throw new Error(expectedSheetName + " sheet is missing.");
   if (sheet.getLastRow() < 2) {
-    throw new Error("EXPECTED_DRIVERS does not contain today's date: " + serviceDate);
+    throw new Error(expectedSheetName + " does not contain today's date: " + serviceDate);
   }
 
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
@@ -219,13 +229,14 @@ function validateExpectedDriversDate_(ss, serviceDate) {
   });
 
   if (!found) {
-    throw new Error("EXPECTED_DRIVERS does not contain today's date: " + serviceDate);
+    throw new Error(expectedSheetName + " does not contain today's date: " + serviceDate);
   }
 }
 
-function replaceEMentorCheck_(ss, rows) {
-  const sheet = ss.getSheetByName("eMentor_Check");
-  if (!sheet) throw new Error("eMentor_Check sheet is missing.");
+function replaceAdoptionCheck_(ss, rows) {
+  const rawImportSheetName = getScriptProperty_(ADOPTION_RAW_IMPORT_SHEET_PROPERTY, ADOPTION_DEFAULT_RAW_IMPORT_SHEET);
+  const sheet = ss.getSheetByName(rawImportSheetName);
+  if (!sheet) throw new Error(rawImportSheetName + " sheet is missing.");
 
   const normalizedRows = rows.map(function(row, index) {
     if (!Array.isArray(row)) {
@@ -242,19 +253,19 @@ function replaceEMentorCheck_(ss, rows) {
   }
 
   sheet.getRange(1, 1, sheet.getMaxRows(), 12).clearContent();
-  sheet.getRange(1, 1, 1, 12).setValues([EMENTOR_ADOPTION_HEADERS]);
+  sheet.getRange(1, 1, 1, 12).setValues([ADOPTION_HEADERS]);
   if (normalizedRows.length) {
     sheet.getRange(2, 1, normalizedRows.length, 12).setValues(normalizedRows);
   }
 }
 
 function persistAdoptionHistory_(ss, summary) {
-  let sheet = ss.getSheetByName(EMENTOR_ADOPTION_HISTORY_SHEET);
+  let sheet = ss.getSheetByName(ADOPTION_HISTORY_SHEET);
   if (!sheet) {
-    sheet = ss.insertSheet(EMENTOR_ADOPTION_HISTORY_SHEET);
+    sheet = ss.insertSheet(ADOPTION_HISTORY_SHEET);
   }
-  sheet.getRange(1, 1, 1, EMENTOR_ADOPTION_HISTORY_HEADERS.length)
-    .setValues([EMENTOR_ADOPTION_HISTORY_HEADERS]);
+  sheet.getRange(1, 1, 1, ADOPTION_HISTORY_HEADERS.length)
+    .setValues([ADOPTION_HISTORY_HEADERS]);
 
   if (sheet.getLastRow() > 1) {
     const existingDates = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
@@ -264,10 +275,10 @@ function persistAdoptionHistory_(ss, summary) {
     if (alreadyStored) return false;
   }
 
-  const stationA = summary.stations.STATION_A;
-  const stationB = summary.stations.STATION_B;
-  const overallExpected = stationA.expectedDrivers + stationB.expectedDrivers;
-  const overallChecked = stationA.driversWithCheck + stationB.driversWithCheck;
+  const siteA = summary.sites.SITE_A;
+  const siteB = summary.sites.SITE_B;
+  const overallExpected = siteA.expectedDrivers + siteB.expectedDrivers;
+  const overallChecked = siteA.driversWithCheck + siteB.driversWithCheck;
   const overallMissing = overallExpected - overallChecked;
   const overallAdoption = overallExpected ? overallChecked / overallExpected : 0;
 
@@ -280,26 +291,27 @@ function persistAdoptionHistory_(ss, summary) {
     overallChecked,
     overallMissing,
     overallAdoption,
-    stationA.expectedDrivers,
-    stationA.driversWithCheck,
-    stationA.expectedDrivers - stationA.driversWithCheck,
-    stationA.adoptionRate,
-    JSON.stringify(stationA.missingDrivers || []),
-    JSON.stringify(stationA.unmatchedNames || []),
-    JSON.stringify(stationA.extraMentorDrivers || []),
-    stationB.expectedDrivers,
-    stationB.driversWithCheck,
-    stationB.expectedDrivers - stationB.driversWithCheck,
-    stationB.adoptionRate,
-    JSON.stringify(stationB.missingDrivers || []),
-    JSON.stringify(stationB.unmatchedNames || []),
-    JSON.stringify(stationB.extraMentorDrivers || [])
+    siteA.expectedDrivers,
+    siteA.driversWithCheck,
+    siteA.expectedDrivers - siteA.driversWithCheck,
+    siteA.adoptionRate,
+    JSON.stringify(siteA.missingDrivers || []),
+    JSON.stringify(siteA.unmatchedNames || []),
+    JSON.stringify(siteA.extraMentorDrivers || []),
+    siteB.expectedDrivers,
+    siteB.driversWithCheck,
+    siteB.expectedDrivers - siteB.driversWithCheck,
+    siteB.adoptionRate,
+    JSON.stringify(siteB.missingDrivers || []),
+    JSON.stringify(siteB.unmatchedNames || []),
+    JSON.stringify(siteB.extraMentorDrivers || [])
   ]);
   return true;
 }
 
-function isSundayServiceDate_(serviceDate) {
-  return new Date(serviceDate + "T12:00:00Z").getUTCDay() === 0;
+function isSkippedServiceDate_(serviceDate) {
+  const weekday = new Date(serviceDate + "T12:00:00Z").getUTCDay();
+  return getSkippedWeekdays_().indexOf(weekday) !== -1;
 }
 
 function attachAdoptionEmail_(summary) {
@@ -314,10 +326,10 @@ function attachAdoptionEmail_(summary) {
 
 function getAdoptionEmailRecipients_() {
   const configuredRecipients = PropertiesService.getScriptProperties()
-    .getProperty(EMENTOR_ADOPTION_EMAIL_RECIPIENTS_PROPERTY);
+    .getProperty(ADOPTION_EMAIL_RECIPIENTS_PROPERTY);
   const recipients = configuredRecipients
     ? configuredRecipients.split(/\n|,/).map(function(recipient) { return recipient.trim(); }).filter(Boolean)
-    : EMENTOR_ADOPTION_EMAIL_RECIPIENTS;
+    : ADOPTION_EMAIL_RECIPIENTS;
 
   return recipients.map(function(recipient) {
     const value = String(recipient || "").trim();
@@ -338,12 +350,12 @@ function getAdoptionEmailRecipients_() {
 }
 
 function getAdoptionSnapshot_(ss, serviceDate) {
-  const sheet = ss.getSheetByName(EMENTOR_ADOPTION_HISTORY_SHEET);
+  const sheet = ss.getSheetByName(ADOPTION_HISTORY_SHEET);
   if (!sheet || sheet.getLastRow() < 2) {
     throw new Error("ADOPTION_HISTORY does not contain service date: " + serviceDate);
   }
 
-  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, EMENTOR_ADOPTION_HISTORY_HEADERS.length).getValues();
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, ADOPTION_HISTORY_HEADERS.length).getValues();
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
     if (sheetDateKey_(row[0]) !== serviceDate) continue;
@@ -352,13 +364,13 @@ function getAdoptionSnapshot_(ss, serviceDate) {
         serviceDate: serviceDate,
         generatedAt: String(row[1] || ""),
         runMode: String(row[2] || "production"),
-        snapshotTime: String(row[3] || "18:00 Europe/Berlin"),
+        snapshotTime: String(row[3] || snapshotTimeLabel_()),
         history: {
           snapshotCreated: false,
           reusedExistingSnapshot: true
         },
-        stations: {
-          STATION_A: {
+        sites: {
+          SITE_A: {
             expectedDrivers: Number(row[8] || 0),
             driversWithCheck: Number(row[9] || 0),
             missingDrivers: parseJsonArray_(row[12]),
@@ -366,7 +378,7 @@ function getAdoptionSnapshot_(ss, serviceDate) {
             extraMentorDrivers: parseJsonArray_(row[14]),
             adoptionRate: Number(row[11] || 0)
           },
-          STATION_B: {
+          SITE_B: {
             expectedDrivers: Number(row[15] || 0),
             driversWithCheck: Number(row[16] || 0),
             missingDrivers: parseJsonArray_(row[19]),
@@ -395,20 +407,20 @@ function parseJsonArray_(value) {
 }
 
 function getEmailDeliverySheet_(ss) {
-  let sheet = ss.getSheetByName(EMENTOR_ADOPTION_EMAIL_DELIVERY_SHEET);
+  let sheet = ss.getSheetByName(ADOPTION_EMAIL_DELIVERY_SHEET);
   if (!sheet) {
-    sheet = ss.insertSheet(EMENTOR_ADOPTION_EMAIL_DELIVERY_SHEET);
+    sheet = ss.insertSheet(ADOPTION_EMAIL_DELIVERY_SHEET);
   }
-  sheet.getRange(1, 1, 1, EMENTOR_ADOPTION_EMAIL_DELIVERY_HEADERS.length)
-    .setValues([EMENTOR_ADOPTION_EMAIL_DELIVERY_HEADERS]);
+  sheet.getRange(1, 1, 1, ADOPTION_EMAIL_DELIVERY_HEADERS.length)
+    .setValues([ADOPTION_EMAIL_DELIVERY_HEADERS]);
   return sheet;
 }
 
 function getEmailDeliveryLog_(ss, serviceDate) {
-  const sheet = ss.getSheetByName(EMENTOR_ADOPTION_EMAIL_DELIVERY_SHEET);
+  const sheet = ss.getSheetByName(ADOPTION_EMAIL_DELIVERY_SHEET);
   if (!sheet || sheet.getLastRow() < 2) return [];
 
-  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, EMENTOR_ADOPTION_EMAIL_DELIVERY_HEADERS.length).getValues();
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, ADOPTION_EMAIL_DELIVERY_HEADERS.length).getValues();
   const records = [];
   values.forEach(function(row, index) {
     if (sheetDateKey_(row[0]) !== serviceDate) return;
@@ -450,15 +462,15 @@ function appendEmailDeliveryRecord_(ss, record) {
 }
 
 function maybeSendProductionAdoptionEmail_(ss, summary) {
-  if (isSundayServiceDate_(summary.serviceDate)) {
+  if (isSkippedServiceDate_(summary.serviceDate)) {
     return {
-      action: "EMAIL_SKIPPED_SUNDAY",
+      action: "EMAIL_SKIPPED_CONFIGURED_WEEKDAY",
       recipients: []
     };
   }
 
   const enabled = PropertiesService.getScriptProperties()
-    .getProperty(EMENTOR_ADOPTION_PER_RECIPIENT_EMAIL_ENABLED_PROPERTY);
+    .getProperty(ADOPTION_PER_RECIPIENT_EMAIL_ENABLED_PROPERTY);
   if (String(enabled || "").toLowerCase() !== "true") {
     return {
       action: "EMAIL_SKIPPED_DISABLED",
@@ -523,10 +535,10 @@ function getRemainingMailAppQuota_() {
 }
 
 function buildAdoptionEmailText_(summary) {
-  const stationA = summary.stations.STATION_A;
-  const stationB = summary.stations.STATION_B;
-  const expected = stationA.expectedDrivers + stationB.expectedDrivers;
-  const checked = stationA.driversWithCheck + stationB.driversWithCheck;
+  const siteA = summary.sites.SITE_A;
+  const siteB = summary.sites.SITE_B;
+  const expected = siteA.expectedDrivers + siteB.expectedDrivers;
+  const checked = siteA.driversWithCheck + siteB.driversWithCheck;
   const adoption = expected ? checked / expected : 0;
 
   return [
@@ -535,19 +547,19 @@ function buildAdoptionEmailText_(summary) {
     "",
     checked + " of " + expected + " expected drivers completed their eMentor Check today (" + formatAdoptionPercent_(adoption) + " overall adoption).",
     "",
-    formatStationEmailText_("STATION_A", stationA),
+    formatSiteEmailText_("SITE_A", siteA),
     "",
-    formatStationEmailText_("STATION_B", stationB),
+    formatSiteEmailText_("SITE_B", siteB),
     "",
     "Generated automatically on",
-    formatGeneratedAt_(summary.generatedAt) + " Europe/Berlin"
+    formatGeneratedAt_(summary.generatedAt) + " " + getReportingTimeZone_()
   ].join("\n");
 }
 
-function formatStationEmailText_(station, summary) {
+function formatSiteEmailText_(site, summary) {
   const missingDrivers = sortedDriverNames_(summary.missingDrivers);
   return [
-    station,
+    site,
     "Expected Drivers: " + summary.expectedDrivers,
     "Drivers with eMentor Check: " + summary.driversWithCheck,
     "Missing Drivers: " + (summary.expectedDrivers - summary.driversWithCheck),
@@ -559,10 +571,10 @@ function formatStationEmailText_(station, summary) {
 }
 
 function buildAdoptionEmailHtml_(summary) {
-  const stationA = summary.stations.STATION_A;
-  const stationB = summary.stations.STATION_B;
-  const overallExpected = stationA.expectedDrivers + stationB.expectedDrivers;
-  const overallChecked = stationA.driversWithCheck + stationB.driversWithCheck;
+  const siteA = summary.sites.SITE_A;
+  const siteB = summary.sites.SITE_B;
+  const overallExpected = siteA.expectedDrivers + siteB.expectedDrivers;
+  const overallChecked = siteA.driversWithCheck + siteB.driversWithCheck;
   const overallRate = overallExpected ? overallChecked / overallExpected : 0;
   const executiveSummary = overallChecked + " of " + overallExpected +
     " expected drivers completed their eMentor Check today (" +
@@ -574,26 +586,26 @@ function buildAdoptionEmailHtml_(summary) {
     '<h1 style="font-size:26px;line-height:1.25;margin:0 0 6px;">eMentor Daily Adoption Report</h1>' +
     '<div style="font-size:14px;color:#5c6773;margin-bottom:10px;">Service Date: <strong>' + escapeAdoptionHtml_(summary.serviceDate) + '</strong></div>' +
     '<div style="font-size:15px;line-height:1.5;color:#374151;margin-bottom:28px;">' + escapeAdoptionHtml_(executiveSummary) + '</div>' +
-    formatStationEmailHtml_("OVERALL", {
+    formatSiteEmailHtml_("OVERALL", {
       expectedDrivers: overallExpected,
       driversWithCheck: overallChecked,
       missingDrivers: [],
       adoptionRate: overallRate
     }, false, "#6b7280", "#f3f4f6") +
     '<hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0;">' +
-    formatStationEmailHtml_("STATION_A", stationA, true, "#2474c6", "#f2f7fc") +
+    formatSiteEmailHtml_("SITE_A", siteA, true, "#2474c6", "#f2f7fc") +
     '<hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0;">' +
-    formatStationEmailHtml_("STATION_B", stationB, true, "#2e7d32", "#f2f8f2") +
+    formatSiteEmailHtml_("SITE_B", siteB, true, "#2e7d32", "#f2f8f2") +
     '<hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0 24px;">' +
     '<h2 style="font-size:18px;margin:0 0 10px;">Notes</h2>' +
     '<p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 10px;">This report compares today\'s Resource Planning expected drivers with today\'s eMentor Shift Report.</p>' +
     '<p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 20px;">Drivers who were planned but did not actually receive a route (for example due to sick leave, no-show or last-minute operational changes) may appear in the missing list and should be verified by the dispatcher before taking action.</p>' +
     '<div style="font-size:12px;line-height:1.5;color:#7b8490;border-top:1px solid #eef1f4;padding-top:16px;">Generated automatically on<br><strong>' +
-    escapeAdoptionHtml_(formatGeneratedAt_(summary.generatedAt) + " Europe/Berlin") + '</strong></div>' +
+    escapeAdoptionHtml_(formatGeneratedAt_(summary.generatedAt) + " " + getReportingTimeZone_()) + '</strong></div>' +
     '</div></div></body></html>';
 }
 
-function formatStationEmailHtml_(station, summary, includeMissingDrivers, accent, background) {
+function formatSiteEmailHtml_(site, summary, includeMissingDrivers, accent, background) {
   const missingDrivers = sortedDriverNames_(summary.missingDrivers);
   const missingCount = summary.expectedDrivers - summary.driversWithCheck;
   const missingList = missingDrivers.length
@@ -601,7 +613,7 @@ function formatStationEmailHtml_(station, summary, includeMissingDrivers, accent
       missingDrivers.map(function(name) { return "<li>" + escapeAdoptionHtml_(name) + "</li>"; }).join("") + "</ul>"
     : '<div style="font-size:14px;color:#5c6773;margin-top:8px;">None</div>';
 
-  return '<section><h2 style="font-size:21px;line-height:1.3;margin:0 0 16px;color:' + accent + ';">' + station + '</h2>' +
+  return '<section><h2 style="font-size:21px;line-height:1.3;margin:0 0 16px;color:' + accent + ';">' + site + '</h2>' +
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><tr>' +
     formatAdoptionKpiCell_("Expected Drivers", summary.expectedDrivers, accent, background) +
     formatAdoptionKpiCell_("With Check", summary.driversWithCheck, accent, background) +
@@ -625,7 +637,7 @@ function sortedDriverNames_(names) {
 }
 
 function formatGeneratedAt_(generatedAt) {
-  return Utilities.formatDate(new Date(generatedAt), EMENTOR_ADOPTION_TIME_ZONE, "dd MMM yyyy, HH:mm");
+  return Utilities.formatDate(new Date(generatedAt), getReportingTimeZone_(), "dd MMM yyyy, HH:mm");
 }
 
 function formatAdoptionPercent_(rate) {
@@ -641,13 +653,13 @@ function escapeAdoptionHtml_(value) {
     .replace(/'/g, "&#39;");
 }
 
-function todayBerlin_() {
-  return Utilities.formatDate(new Date(), EMENTOR_ADOPTION_TIME_ZONE, "yyyy-MM-dd");
+function todayReportingDate_() {
+  return Utilities.formatDate(new Date(), getReportingTimeZone_(), "yyyy-MM-dd");
 }
 
 function sheetDateKey_(value) {
   if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
-    return Utilities.formatDate(value, EMENTOR_ADOPTION_TIME_ZONE, "yyyy-MM-dd");
+    return Utilities.formatDate(value, getReportingTimeZone_(), "yyyy-MM-dd");
   }
 
   const text = String(value || "").trim();
@@ -680,4 +692,29 @@ function jsonResponse_(body) {
   return ContentService
     .createTextOutput(JSON.stringify(body))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getScriptProperty_(name, fallback) {
+  const value = PropertiesService.getScriptProperties().getProperty(name);
+  return value ? String(value).trim() : fallback;
+}
+
+function getReportingTimeZone_() {
+  return getScriptProperty_(ADOPTION_TIME_ZONE_PROPERTY, ADOPTION_DEFAULT_TIME_ZONE);
+}
+
+function getReportingRunHour_() {
+  const value = Number(getScriptProperty_(ADOPTION_RUN_HOUR_PROPERTY, String(ADOPTION_DEFAULT_RUN_HOUR)));
+  return Number.isFinite(value) ? value : ADOPTION_DEFAULT_RUN_HOUR;
+}
+
+function getSkippedWeekdays_() {
+  return getScriptProperty_(ADOPTION_SKIP_WEEKDAYS_PROPERTY, ADOPTION_DEFAULT_SKIP_WEEKDAYS)
+    .split(",")
+    .map(function(value) { return Number(String(value).trim()); })
+    .filter(function(value) { return Number.isInteger(value) && value >= 0 && value <= 6; });
+}
+
+function snapshotTimeLabel_() {
+  return ("0" + getReportingRunHour_()).slice(-2) + ":00 " + getReportingTimeZone_();
 }

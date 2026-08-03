@@ -1,52 +1,45 @@
 # Apps Script setup
 
-## Files
-
-Copy these files into the Apps Script project attached to your adoption workbook:
+Copy these files into an Apps Script project attached to your workbook:
 
 - `apps-script/ementor.gs`
 - `apps-script/adoption.gs`
 
-Keep any existing manually used menu functions in `ementor.gs`. The adoption endpoint calls the matcher headlessly but does not replace the manual workflow.
+The public matcher keeps the production-style workflow visible while avoiding private workbook details. Adapt workbook ranges and tab names through script properties instead of hardcoding deployment-specific details.
 
-## Script properties
-
-Set these properties in Apps Script project settings:
+## Required properties
 
 | Property | Required | Description |
 | --- | --- | --- |
-| `EMENTOR_ADOPTION_SPREADSHEET_ID` | Yes | Google Sheet ID for the adoption workbook |
-| `EMENTOR_ADOPTION_SHARED_SECRET` | Yes | Long random secret shared with Railway |
-| `EMENTOR_ADOPTION_PER_RECIPIENT_EMAIL_ENABLED` | Production email only | Set to `true` only after delivery tests pass |
-| `EMENTOR_ADOPTION_EMAIL_RECIPIENTS` | Production email only | Comma- or newline-separated recipients, for example `Operations Lead <ops-lead@example.com>` |
+| `ADOPTION_SPREADSHEET_ID` | Yes | Target workbook ID |
+| `ADOPTION_SHARED_SECRET` | Yes | Shared secret used by the worker |
 
-Do not store these values in git.
+## Optional properties
+
+| Property | Description |
+| --- | --- |
+| `ADOPTION_RAW_IMPORT_SHEET` | Raw shift-report tab. Default: `Adoption_Check` |
+| `ADOPTION_EXPECTED_SHEET` | Expected workers tab. Default: `EXPECTED_DRIVERS` |
+| `ADOPTION_ALIAS_SHEET` | Alias table tab. Default: `ALIAS_TABLE` |
+| `ADOPTION_TIME_ZONE` | Reporting timezone. Default example: `Etc/UTC` |
+| `ADOPTION_RUN_HOUR` | Reporting run hour. Default example: `18` |
+| `ADOPTION_SKIP_WEEKDAYS` | Comma-separated weekday numbers to skip |
+| `ADOPTION_PER_RECIPIENT_EMAIL_ENABLED` | Enables production report email |
+| `ADOPTION_EMAIL_RECIPIENTS` | Approved recipient allowlist |
 
 ## Web App deployment
 
-1. Open Apps Script.
-2. Deploy as a Web App.
-3. Execute as the account that owns the Gmail/Workspace mailbox used for reports.
-4. Grant required scopes for Sheets and Gmail.
-5. Copy the Web App URL into Railway as `EMENTOR_ADOPTION_WEB_APP_URL`.
-
-The Web App endpoint validates a shared-secret HMAC signature before changing workbook data.
-
-## Gmail authorization
-
-The production email path uses `GmailApp.sendEmail()`. The executing Apps Script account must authorize Gmail access before production email can work.
-
-Verify:
-
-- The executing account is the intended sender.
-- A test report appears in Sent.
-- Test recipients receive the email.
-- No bounce is generated.
+1. Create or open an Apps Script project.
+2. Add the two `.gs` files.
+3. Set script properties.
+4. Deploy as a Web App.
+5. Execute as the account intended to own workbook and Gmail actions.
+6. Store the Web App URL outside git.
 
 ## Run modes
 
-| Mode | Replaces raw report | Runs matcher | Writes history | Sends production recipients |
+| Mode | Replaces raw report | Runs matcher | Writes history | Sends configured recipients |
 | --- | --- | --- | --- | --- |
 | `test` | Yes | Yes | No | No |
 | `manual` | Yes | Yes | No | No |
-| `production` | Yes | Yes | Yes, once per service date | Yes, when enabled and not Sunday |
+| `production` | Yes | Yes | Yes, once per service date | Yes, when enabled and not skipped by schedule config |

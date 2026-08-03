@@ -8,13 +8,14 @@ import { extractTokenCookie, MentorSessionManager, type MentorFetch } from "../.
 
 function makeConfig(overrides: Partial<MentorConfig> = {}): MentorConfig {
   return {
-    baseUrl: "https://mentor-api.example.com",
+    baseUrl: "https://mentor.example.com",
     company: "EXAMPLE",
     languageCode: "en",
     password: "password-secret",
     refreshSafetyWindowMs: 5 * 60 * 1000,
     requestRetryDelaysMs: [],
     requestTimeoutMs: 30_000,
+    timeZone: "Etc/UTC",
     username: "mentor-user",
     ...overrides,
   };
@@ -41,7 +42,7 @@ describe("MentorSessionManager", () => {
     await session.login();
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      "https://mentor-api.example.com/users/login_with_username_password",
+      "https://mentor.example.com/auth/login",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
@@ -92,7 +93,7 @@ describe("MentorSessionManager", () => {
     await session.refresh();
 
     expect(fetchImpl).toHaveBeenLastCalledWith(
-      "https://mentor-api.example.com/users/token/refresh",
+      "https://mentor.example.com/auth/refresh",
       expect.objectContaining({
         method: "POST",
         body: "{}",
@@ -153,11 +154,11 @@ describe("MentorClient", () => {
       .mockResolvedValueOnce(jsonResponse({ data: [{ id: 1 }] }));
     const client = new MentorClient(makeConfig(), { fetchImpl });
 
-    await expect(client.getShiftMetadata()).resolves.toEqual({ data: [{ id: 1 }] });
+    await expect(client.fetchDailyShiftMetadata()).resolves.toEqual({ data: [{ id: 1 }] });
 
     expect(fetchImpl).toHaveBeenCalledTimes(4);
     expect(fetchImpl).toHaveBeenLastCalledWith(
-      "https://mentor-api.example.com/reports/driver/shifts/meta",
+      "https://mentor.example.com/reports/daily-shifts/meta",
       expect.objectContaining({
         headers: expect.objectContaining({ cookie: "token=second-cookie" }),
       }),
@@ -178,7 +179,7 @@ describe("MentorClient", () => {
       .mockResolvedValueOnce(jsonResponse({ data: [{ id: 1 }] }));
     const client = new MentorClient(makeConfig({ requestRetryDelaysMs: [10] }), { fetchImpl });
 
-    const request = client.getShiftMetadata();
+    const request = client.fetchDailyShiftMetadata();
     await vi.advanceTimersByTimeAsync(10);
 
     await expect(request).resolves.toEqual({ data: [{ id: 1 }] });

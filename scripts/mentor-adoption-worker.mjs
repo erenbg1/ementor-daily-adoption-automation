@@ -7,14 +7,14 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 
-process.env.TZ = "Europe/Berlin";
-
-const BERLIN_TIME_ZONE = "Europe/Berlin";
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
 
 loadLocalEnv(path.join(repoRoot, ".env"));
 loadLocalEnv(path.join(repoRoot, ".env.local"));
+
+const DEFAULT_REPORTING_TIME_ZONE = process.env.REPORTING_TIME_ZONE || "Etc/UTC";
+process.env.TZ = DEFAULT_REPORTING_TIME_ZONE;
 
 require.extensions[".ts"] = function compileTypescript(module, filename) {
   const source = readFileSync(filename, "utf8");
@@ -36,44 +36,45 @@ export async function runMentorAdoptionWorker({
   mentorClient,
 } = {}) {
   validateRunMode(runMode);
-  const berlin = berlinDateTime(now);
-  if (!force && isSundayServiceDate(berlin.serviceDate)) {
+  const schedule = reportingScheduleConfig();
+  const current = reportingDateTime(now, schedule.timeZone);
+  if (!force && schedule.skipWeekdays.has(current.weekday)) {
     const skipped = {
-      action: "SKIPPED_SUNDAY",
-      berlinTime: berlin.timestamp,
+      action: "SKIPPED_CONFIGURED_WEEKDAY",
+      reportingTime: current.timestamp,
     };
     console.log(JSON.stringify(skipped, null, 2));
     return skipped;
   }
-  if (!force && berlin.hour !== 18) {
+  if (!force && current.hour !== schedule.runHour) {
     const skipped = {
-      action: "SKIPPED_OUTSIDE_18_BERLIN",
-      berlinTime: berlin.timestamp,
+      action: "SKIPPED_OUTSIDE_CONFIGURED_RUN_HOUR",
+      reportingTime: current.timestamp,
     };
     console.log(JSON.stringify(skipped, null, 2));
     return skipped;
   }
 
-  const webAppUrl = requiredEnv("EMENTOR_ADOPTION_WEB_APP_URL");
-  const sharedSecret = requiredEnv("EMENTOR_ADOPTION_SHARED_SECRET");
+  const webAppUrl = requiredEnv("ADOPTION_WEB_APP_URL");
+  const sharedSecret = requiredEnv("ADOPTION_SHARED_SECRET");
   const client = mentorClient ?? createMentorClient();
-  const bounds = berlinDayBoundsMs(berlin.serviceDate);
+  const bounds = serviceDayBoundsMs(current.serviceDate);
 
-  const shiftResponse = await client.getShiftReportJson({
+  const shiftResponse = await client.fetchDailyShiftReport({
     decorate: "yes",
     endTime: bounds.endTime,
-    localDate: berlin.serviceDate,
+    localDate: current.serviceDate,
     startTime: bounds.startTime,
   });
   const shiftRows = getRows(shiftResponse);
   if (!shiftRows.length) {
-    throw new Error(`Mentor returned no Shift Report rows for ${berlin.serviceDate}.`);
+    throw new Error(`Report provider returned no Shift Report rows for ${current.serviceDate}.`);
   }
 
-  const rows = mapShiftRowsToEMentor(shiftRows);
-  const signedBody = buildAppsScriptSignedBody({ serviceDate: berlin.serviceDate, runMode, rows });
+  const rows = mapShiftRowsToAdoptionImport(shiftRows);
+  const signedBody = buildAppsScriptSignedBody({ serviceDate: current.serviceDate, runMode, rows });
   const requestBody = {
-    serviceDate: berlin.serviceDate,
+    serviceDate: current.serviceDate,
     runMode,
     rows,
     signature: signAdoptionPayload(signedBody, sharedSecret),
@@ -100,12 +101,12 @@ export async function runMentorAdoptionWorker({
     throw new Error(`Apps Script adoption flow failed: ${summary.error}`);
   }
   if (
-    summary?.serviceDate !== berlin.serviceDate
+    summary?.serviceDate !== current.serviceDate
     || summary?.runMode !== runMode
     || !summary?.generatedAt
-    || summary?.snapshotTime !== "18:00 Europe/Berlin"
-    || !summary?.stations?.STATION_A
-    || !summary?.stations?.STATION_B
+    || summary?.snapshotTime !== snapshotTimeLabel(schedule)
+    || !summary?.sites?.SITE_A
+    || !summary?.sites?.SITE_B
   ) {
     throw new Error("Apps Script returned an invalid adoption summary.");
   }
@@ -114,7 +115,7 @@ export async function runMentorAdoptionWorker({
   return summary;
 }
 
-export function mapShiftRowsToEMentor(rows) {
+export function mapShiftRowsToAdoptionImport(rows) {
   return rows.map((row) => [
     toSheetCell(row.firstName),
     toSheetCell(row.lastName),
@@ -127,15 +128,15 @@ export function mapShiftRowsToEMentor(rows) {
     toSheetCell(row.shortTrip),
     toSheetCell(row.device),
     toSheetCell(row.vrmStatus),
-    toSheetCell(row.location1 ?? row.station),
+    toSheetCell(row.location1 ?? row.site),
   ]);
 }
 
 export function buildAdoptionEmail(summary) {
-  const stationA = requiredStationSummary(summary, "STATION_A");
-  const stationB = requiredStationSummary(summary, "STATION_B");
-  const overallExpected = stationA.expectedDrivers + stationB.expectedDrivers;
-  const overallChecked = stationA.driversWithCheck + stationB.driversWithCheck;
+  const siteA = requiredSiteSummary(summary, "SITE_A");
+  const siteB = requiredSiteSummary(summary, "SITE_B");
+  const overallExpected = siteA.expectedDrivers + siteB.expectedDrivers;
+  const overallChecked = siteA.driversWithCheck + siteB.driversWithCheck;
   const overallMissing = overallExpected - overallChecked;
   const overallRate = overallExpected ? overallChecked / overallExpected : 0;
 
@@ -151,11 +152,11 @@ export function buildAdoptionEmail(summary) {
     "",
     "--------------------------------",
     "",
-    formatStationEmail("STATION_A", stationA),
+    formatSiteEmail("SITE_A", siteA),
     "",
     "--------------------------------",
     "",
-    formatStationEmail("STATION_B", stationB),
+    formatSiteEmail("SITE_B", siteB),
     "",
     "--------------------------------",
     "",
@@ -167,10 +168,10 @@ export function buildAdoptionEmail(summary) {
 }
 
 export function buildAdoptionEmailHtml(summary) {
-  const stationA = requiredStationSummary(summary, "STATION_A");
-  const stationB = requiredStationSummary(summary, "STATION_B");
-  const overallExpected = stationA.expectedDrivers + stationB.expectedDrivers;
-  const overallChecked = stationA.driversWithCheck + stationB.driversWithCheck;
+  const siteA = requiredSiteSummary(summary, "SITE_A");
+  const siteB = requiredSiteSummary(summary, "SITE_B");
+  const overallExpected = siteA.expectedDrivers + siteB.expectedDrivers;
+  const overallChecked = siteA.driversWithCheck + siteB.driversWithCheck;
   const overallRate = overallExpected ? overallChecked / overallExpected : 0;
   const executiveSummary = `${overallChecked} of ${overallExpected} expected drivers completed their eMentor Check today (${formatPercentage(overallRate)} overall adoption).`;
 
@@ -182,21 +183,21 @@ export function buildAdoptionEmailHtml(summary) {
       <h1 style="font-size:26px;line-height:1.25;margin:0 0 6px;">eMentor Daily Adoption Report</h1>
       <div style="font-size:14px;color:#5c6773;margin-bottom:10px;">Service Date: <strong>${escapeHtml(summary.serviceDate)}</strong></div>
       <div style="font-size:15px;line-height:1.5;color:#374151;margin-bottom:28px;">${escapeHtml(executiveSummary)}</div>
-      ${formatStationEmailHtml("OVERALL", {
+      ${formatSiteEmailHtml("OVERALL", {
         expectedDrivers: overallExpected,
         driversWithCheck: overallChecked,
         missingDrivers: [],
         adoptionRate: overallRate,
       }, false, "#6b7280", "#f3f4f6")}
       <hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0;">
-      ${formatStationEmailHtml("STATION_A", stationA, true, "#2474c6", "#f2f7fc")}
+      ${formatSiteEmailHtml("SITE_A", siteA, true, "#2474c6", "#f2f7fc")}
       <hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0;">
-      ${formatStationEmailHtml("STATION_B", stationB, true, "#2e7d32", "#f2f8f2")}
+      ${formatSiteEmailHtml("SITE_B", siteB, true, "#2e7d32", "#f2f8f2")}
       <hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0 24px;">
       <h2 style="font-size:18px;margin:0 0 10px;">Notes</h2>
       <p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 10px;">This report compares today's Resource Planning expected drivers with today's eMentor Shift Report.</p>
       <p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 20px;">Drivers who were planned but did not actually receive a route (for example due to sick leave, no-show or last-minute operational changes) may appear in the missing list and should be verified by the dispatcher before taking action.</p>
-      <div style="font-size:12px;line-height:1.5;color:#7b8490;border-top:1px solid #eef1f4;padding-top:16px;">Generated automatically on<br><strong>${escapeHtml(formatGeneratedAt(summary.generatedAt))} Europe/Berlin</strong></div>
+      <div style="font-size:12px;line-height:1.5;color:#7b8490;border-top:1px solid #eef1f4;padding-top:16px;">Generated automatically on<br><strong>${escapeHtml(formatGeneratedAt(summary.generatedAt))} Etc/UTC</strong></div>
     </div>
   </div>
 </body>
@@ -235,7 +236,7 @@ export function parseRunModeArg(args = []) {
   return value;
 }
 
-export function berlinDateTime(date) {
+export function reportingDateTime(date, timeZone = DEFAULT_REPORTING_TIME_ZONE) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
     hour: "2-digit",
@@ -243,19 +244,22 @@ export function berlinDateTime(date) {
     minute: "2-digit",
     month: "2-digit",
     second: "2-digit",
-    timeZone: BERLIN_TIME_ZONE,
+    timeZone,
     year: "numeric",
+    weekday: "short",
   }).formatToParts(date);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const serviceDate = `${values.year}-${values.month}-${values.day}`;
+  const weekday = new Date(`${serviceDate}T12:00:00Z`).getUTCDay();
   return {
     hour: Number(values.hour),
     serviceDate,
-    timestamp: `${serviceDate}T${values.hour}:${values.minute}:${values.second}[${BERLIN_TIME_ZONE}]`,
+    timestamp: `${serviceDate}T${values.hour}:${values.minute}:${values.second}[${timeZone}]`,
+    weekday,
   };
 }
 
-export function berlinDayBoundsMs(serviceDate) {
+export function serviceDayBoundsMs(serviceDate) {
   const [year, month, day] = serviceDate.split("-").map(Number);
   if (!year || !month || !day) throw new Error(`Invalid service date: ${serviceDate}`);
 
@@ -265,8 +269,22 @@ export function berlinDayBoundsMs(serviceDate) {
   };
 }
 
-function isSundayServiceDate(serviceDate) {
-  return new Date(`${serviceDate}T12:00:00Z`).getUTCDay() === 0;
+export function reportingScheduleConfig() {
+  const runHour = Number(process.env.REPORTING_RUN_HOUR || 18);
+  const skipWeekdays = String(process.env.REPORTING_SKIP_WEEKDAYS || "0")
+    .split(",")
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6);
+
+  return {
+    runHour: Number.isInteger(runHour) ? runHour : 18,
+    skipWeekdays: new Set(skipWeekdays),
+    timeZone: process.env.REPORTING_TIME_ZONE || DEFAULT_REPORTING_TIME_ZONE,
+  };
+}
+
+function snapshotTimeLabel(schedule) {
+  return `${String(schedule.runHour).padStart(2, "0")}:00 ${schedule.timeZone}`;
 }
 
 function createMentorClient() {
@@ -291,22 +309,22 @@ function toSheetCell(value) {
   return JSON.stringify(value);
 }
 
-function requiredStationSummary(summary, station) {
-  const result = summary?.stations?.[station];
+function requiredSiteSummary(summary, site) {
+  const result = summary?.sites?.[site];
   if (!summary?.serviceDate || !result) {
-    throw new Error(`Invalid adoption summary: missing ${station} or serviceDate.`);
+    throw new Error(`Invalid adoption summary: missing ${site} or serviceDate.`);
   }
   return result;
 }
 
-function formatStationEmail(station, summary) {
+function formatSiteEmail(site, summary) {
   const missingDrivers = sortedDriverNames(summary.missingDrivers);
   const missingList = missingDrivers.length
     ? missingDrivers.map((name) => `- ${String(name).trim()}`).join("\n")
     : "- None";
 
   return [
-    station,
+    site,
     `- Expected Drivers: ${summary.expectedDrivers}`,
     `- Drivers with eMentor Check: ${summary.driversWithCheck}`,
     `- Missing Drivers: ${summary.expectedDrivers - summary.driversWithCheck}`,
@@ -317,7 +335,7 @@ function formatStationEmail(station, summary) {
   ].join("\n");
 }
 
-function formatStationEmailHtml(station, summary, includeMissingDrivers, accent, background) {
+function formatSiteEmailHtml(site, summary, includeMissingDrivers, accent, background) {
   const missingDrivers = sortedDriverNames(summary.missingDrivers);
   const missingCount = Number(summary.expectedDrivers) - Number(summary.driversWithCheck);
   const missingList = missingDrivers.length
@@ -327,7 +345,7 @@ function formatStationEmailHtml(station, summary, includeMissingDrivers, accent,
     : '<div style="font-size:14px;color:#5c6773;margin-top:8px;">None</div>';
 
   return `<section>
-        <h2 style="font-size:21px;line-height:1.3;margin:0 0 16px;color:${accent};">${station}</h2>
+        <h2 style="font-size:21px;line-height:1.3;margin:0 0 16px;color:${accent};">${site}</h2>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
           <tr>
             ${formatKpiCell("Expected Drivers", summary.expectedDrivers, accent, background)}
@@ -360,7 +378,7 @@ function formatGeneratedAt(generatedAt) {
     hourCycle: "h23",
     minute: "2-digit",
     month: "short",
-    timeZone: BERLIN_TIME_ZONE,
+    timeZone: process.env.REPORTING_TIME_ZONE || DEFAULT_REPORTING_TIME_ZONE,
     year: "numeric",
   }).formatToParts(new Date(generatedAt));
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
@@ -410,7 +428,7 @@ function redact(value) {
   for (const secret of [
     process.env.MENTOR_USERNAME,
     process.env.MENTOR_PASSWORD,
-    process.env.EMENTOR_ADOPTION_SHARED_SECRET,
+    process.env.ADOPTION_SHARED_SECRET,
   ]) {
     if (secret) redacted = redacted.split(secret).join("<redacted>");
   }

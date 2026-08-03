@@ -1,4 +1,4 @@
-const DEFAULT_BASE_URL = "https://mentor-api.example.com";
+const DEFAULT_BASE_URL = "https://mentor.example.com";
 
 async function loadEnvFile(path) {
   let text;
@@ -45,7 +45,7 @@ function getSetCookieHeaders(headers) {
 function extractTokenCookie(headers) {
   const tokenCookie = getSetCookieHeaders(headers).find((cookie) => cookie.toLowerCase().startsWith("token="));
   if (!tokenCookie) {
-    throw new Error("Mentor did not return a token cookie.");
+    throw new Error("Report provider did not return a token cookie.");
   }
   return tokenCookie.split(";")[0];
 }
@@ -77,7 +77,7 @@ async function main() {
   const company = requireEnv("MENTOR_COMPANY");
   const password = requireEnv("MENTOR_PASSWORD");
 
-  const login = await fetch(`${baseUrl}/users/login_with_username_password`, {
+  const login = await fetch(`${baseUrl}/auth/login`, {
     method: "POST",
     headers: {
       accept: "application/json, text/plain, */*",
@@ -93,7 +93,7 @@ async function main() {
   const loginBody = await readJson(login);
   let cookie = extractTokenCookie(login.headers);
 
-  const refresh = await fetch(`${baseUrl}/users/token/refresh`, {
+  const refresh = await fetch(`${baseUrl}/auth/refresh`, {
     method: "POST",
     headers: {
       accept: "application/json",
@@ -107,7 +107,7 @@ async function main() {
   const refreshBody = await readJson(refresh);
   cookie = extractTokenCookie(refresh.headers);
 
-  const comparison = await fetch(`${baseUrl}/reports/mentor/driver_performance_delta`, {
+  const comparison = await fetch(`${baseUrl}/reports/comparison`, {
     method: "POST",
     headers: {
       accept: "application/json",
@@ -122,12 +122,12 @@ async function main() {
       search: "",
       decorate: "yes",
       selectedLanguage: "en",
-      timeZone: "Europe/Berlin",
+      timeZone: process.env.REPORTING_TIME_ZONE || "Etc/UTC",
     }),
   });
   const comparisonBody = await readJson(comparison);
 
-  const shiftMetadata = await fetch(`${baseUrl}/reports/driver/shifts/meta`, {
+  const shiftMetadata = await fetch(`${baseUrl}/reports/daily-shifts/meta`, {
     headers: {
       accept: "application/json",
       cookie,
@@ -159,7 +159,7 @@ main().catch((error) => {
   console.error(
     JSON.stringify({
       ok: false,
-      error: error instanceof Error ? error.message : "Mentor verification failed.",
+      error: error instanceof Error ? error.message : "Report provider verification failed.",
     }),
   );
   process.exit(1);

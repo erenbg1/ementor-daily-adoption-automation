@@ -1,90 +1,72 @@
 # eMentor Daily Adoption Automation
 
-Public-safe automation for producing a daily eMentor adoption report from:
+Production-grade automation project for daily eMentor adoption reporting.
 
-- Mentor Shift Report data
-- Google Sheets expected-driver data
-- an existing Apps Script matcher
-- Gmail-based report delivery
+This repository contains a production-quality eMentor automation project. It automates the daily check that compares planned drivers against the eMentor Shift Report, stores the official adoption snapshot, and sends a clean GmailApp report.
 
-The repository is intentionally sanitized. It contains no production credentials, no private Google Sheet IDs, no Apps Script deployment URLs, no real driver data, and no real recipient list.
+- Mentor API session handling with sanitized placeholder endpoints.
+- Daily eMentor Shift Report ingestion.
+- Google Sheets matching for expected drivers versus completed eMentor checks.
+- Identity dictionary learning and conflict detection.
+- ADOPTION_HISTORY row preparation.
+- Apps Script bridge for daily adoption emails through GmailApp.
 
-## Feature overview
+No production credentials, private database files, production Google Sheet IDs, Apps Script deployment URLs, real driver data, or real recipient lists are committed.
 
-- Downloads a same-day Mentor Shift Report from a configured Mentor tenant.
-- Posts the report to a signed Apps Script Web App endpoint.
-- Reuses the workbook’s existing matching rules for expected-vs-completed driver checks.
-- Produces station-level and overall adoption statistics.
-- Stores one immutable production snapshot per service date.
-- Sends the approved HTML report through `GmailApp` when production email is enabled.
-- Supports `test`, `manual`, and `production` run modes.
-- Includes unit tests for Mentor matching, identity handling, Apps Script behavior, and worker behavior.
+## Feature Overview
+
+- Mentor login, token refresh, timeout handling, and retry configuration.
+- Deterministic matching between expected drivers and eMentor Shift Report rows.
+- Identity dictionary learning, confirmation, and conflict quarantine.
+- ADOPTION_HISTORY normalization for dashboard persistence.
+- Daily adoption automation through Apps Script, Google Sheets, Railway, and GmailApp.
+- Tests for matching, identity learning, log-history conversion, Apps Script behavior, and worker behavior.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  Cron["Railway cron"] --> Worker["Adoption worker"]
-  Worker --> Mentor["Mentor API"]
-  Worker --> WebApp["Apps Script Web App"]
-  WebApp --> Sheet["Google Sheet workbook"]
-  Sheet --> Expected["EXPECTED_DRIVERS"]
-  Sheet --> Raw["eMentor_Check"]
-  Sheet --> Matcher["Existing matcher"]
-  Matcher --> Summary["Adoption summary"]
-  Summary --> History["ADOPTION_HISTORY"]
-  Summary --> Gmail["GmailApp delivery"]
-  WebApp --> Worker
+  Provider["Mentor API"] --> Shift["Shift Report"]
+  Provider --> Comparison["Comparison Report"]
+  Comparison --> Matcher["Daily Matching Engine"]
+  Shift --> Matcher
+  Matcher --> Dictionary["Identity Dictionary"]
+  Dictionary --> Resolver["Comparison Resolution"]
+  Resolver --> LogHistory["Log History Rows"]
+  Shift --> AdoptionWorker["Adoption Worker"]
+  AdoptionWorker --> AppsScript["Apps Script Web App"]
+  AppsScript --> Gmail["GmailApp"]
 ```
 
-## End-to-end workflow
-
-```mermaid
-sequenceDiagram
-  participant R as Railway Worker
-  participant M as Mentor API
-  participant A as Apps Script
-  participant S as Google Sheet
-  participant G as GmailApp
-
-  R->>M: Authenticate
-  R->>M: Download D0 Shift Report
-  R->>A: POST signed payload
-  A->>S: Validate EXPECTED_DRIVERS for service date
-  A->>S: Replace eMentor_Check A:L
-  A->>S: Run existing matcher headlessly
-  A->>S: Append ADOPTION_HISTORY only in production
-  A->>G: Send report if enabled and not Sunday
-  A-->>R: Return structured summary
-```
-
-## Repository map
+## Repository Map
 
 ```text
-apps-script/
-  adoption.gs                Signed Web App endpoint, summary, history, email delivery
-  ementor.gs                 Existing matching helpers and manual workflow bridge
+src/lib/mentor/
+  client.ts                  Mentor API client
+  config.ts                  Environment configuration
+  session-manager.ts         Login, token refresh, timeout and retry handling
+  daily-matching.ts          Deterministic eMentor report matching
+  identity-dictionary.ts     Identity learning, confirmation and conflict logic
+  comparison-resolution.ts   Resolves comparison rows through the dictionary
+  log-history.ts             Converts resolved rows into history records
 
 scripts/
-  mentor-adoption-worker.mjs Scheduled Railway worker
-  verify-mentor-auth.mjs     Mentor login/report-access verification
+  verify-mentor-auth.mjs     Manual Mentor credential verification
+  mentor-adoption-worker.mjs Scheduled daily adoption worker
 
-src/lib/
-  env.ts                     Small environment helper
-  mentor/                    Mentor client, matching, identity, and report helpers
+apps-script/
+  adoption.gs                Apps Script Web App bridge
+  ementor.gs                 Existing Apps Script matching helpers
 
 tests/
-  mentor/                    Unit and integration-style tests
-  mocks/                     Test-only mocks
+  mentor/           Unit and integration-style tests
 
 docs/
-  architecture.md            Technical architecture
-  apps-script-setup.md       Apps Script setup
-  google-sheets-structure.md Workbook structure
-  local-development.md       Local development
-  production-deployment.md   Deployment checklist
-  security.md                Public-release checklist
-  screenshots/               Sanitized screenshot guidance
+  architecture.md            Technical architecture details
+  local-development.md       Local setup instructions
+  production-deployment.md   Production deployment checklist
+  screenshots/README.md      Screenshot guidance for public docs
+  security.md                Public-release and secret-handling checklist
 ```
 
 ## Installation
@@ -94,46 +76,36 @@ Requirements:
 - Node.js 22+
 - npm
 - Mentor credentials for live verification
-- A Google Sheet workbook with the required tabs
-- An Apps Script project deployed as a Web App
-
-Install dependencies:
+- Google Apps Script project for the adoption bridge
 
 ```bash
 npm install
 cp .env.example .env.local
 ```
 
-Fill `.env.local` with private values. Never commit `.env.local`.
+Fill `.env.local` with local values. Never commit it.
 
-## Local development
+## Local Development
 
 Run checks:
 
 ```bash
 npm run lint
 npm test
+npm run build
 ```
 
-Verify Mentor access:
+Verify Mentor authentication:
 
 ```bash
 npm run mentor:verify
 ```
 
-Run the adoption worker manually:
+Run the optional adoption worker manually:
 
 ```bash
-npm run mentor:adoption -- --run-mode=manual
+npm run adoption:run -- --run-mode=manual
 ```
-
-Run test mode:
-
-```bash
-npm run mentor:adoption:test
-```
-
-More details are in [docs/local-development.md](docs/local-development.md).
 
 ## Configuration
 
@@ -145,116 +117,24 @@ Main variables:
 - `MENTOR_PASSWORD`
 - `MENTOR_COMPANY`
 - `MENTOR_BASE_URL`
-- `EMENTOR_ADOPTION_WEB_APP_URL`
-- `EMENTOR_ADOPTION_SHARED_SECRET`
+- `MENTOR_LOG_DATABASE_URL`
+- `ADOPTION_WEB_APP_URL`
+- `ADOPTION_SHARED_SECRET`
 - `TZ`
 
-Apps Script script properties are documented in [docs/apps-script-setup.md](docs/apps-script-setup.md).
+`MENTOR_LOG_DATABASE_URL` can point to SQLite for local development or PostgreSQL in production.
 
-## Google Sheets structure
+## Production Deployment
 
-The workbook remains the operational source of truth. Required tabs include:
-
-- `eMentor_Check`
-- `EXPECTED_DRIVERS`
-- `ALIAS_TABLE`
-- `ADOPTION_HISTORY`
-- `ADOPTION_EMAIL_DELIVERY`
-
-See [docs/google-sheets-structure.md](docs/google-sheets-structure.md).
-
-## Apps Script components
-
-The Apps Script layer:
-
-- validates signed worker requests
-- validates that expected drivers exist for the service date
-- replaces the raw report range
-- runs the existing matcher headlessly
-- calculates adoption metrics
-- appends immutable production history
-- sends production email through `GmailApp` when enabled
-
-Manual menu behavior is preserved by keeping the matcher separate from the UI entry points.
-
-## Adoption history
-
-`ADOPTION_HISTORY` stores one immutable production snapshot per service date. Test and manual runs do not write history.
-
-The summary includes:
-
-- service date
-- generated timestamp
-- run mode
-- snapshot time
-- overall metrics
-- station-level metrics
-- missing drivers
-- unmatched names
-- extra Mentor drivers
-
-## Matching logic
-
-The matcher compares expected drivers from the workbook with Mentor Shift Report rows. At a high level it uses:
-
-- station filtering
-- normalized name keys
-- manually maintained aliases
-- reversed-name handling
-- token overlap
-- edit-distance checks
-
-The matching rules live in Apps Script and are reused by both manual and headless workflows.
-
-## Production deployment
-
-Production deployment uses:
-
-- Railway for the scheduled worker
-- Apps Script Web App for workbook mutation and report generation
-- Google Sheets as operational storage
-- GmailApp for production email delivery
-
-See [docs/production-deployment.md](docs/production-deployment.md).
-
-## Troubleshooting
-
-Common failure scenarios:
-
-- Mentor login fails: verify Mentor credentials and tenant/company value.
-- Shift Report download fails: verify Mentor endpoint access and account permissions.
-- Apps Script rejects the payload: verify Web App URL and shared secret.
-- Expected drivers are missing: verify the workbook trigger that refreshes `EXPECTED_DRIVERS`.
-- Duplicate production run: confirm `ADOPTION_HISTORY` already has the service date; reruns should not append a second snapshot.
-- Email not sent: verify production email is enabled, the day is not Sunday, Gmail authorization is granted, and Apps Script execution logs show per-recipient attempts.
+See [Production deployment](docs/production-deployment.md).
 
 ## Screenshots
 
-Only sanitized screenshots should be committed. Use demo data and remove browser chrome, real names, email addresses, workbook IDs, deployment URLs, and operational identifiers.
-
-See [docs/screenshots/README.md](docs/screenshots/README.md).
+Screenshots are not committed by default because operational images can expose private driver data. See [Screenshot guidance](docs/screenshots/README.md).
 
 ## Security
 
-Before publishing:
-
-1. Confirm no `.env*` files other than `.env.example` are present.
-2. Confirm no production Google Sheet IDs, Apps Script URLs, OAuth secrets, Railway variables, or recipient emails are present.
-3. Confirm no real driver names, employee IDs, or production aliases are present.
-4. Confirm git history does not contain secrets.
-
-See [docs/security.md](docs/security.md).
-
-## Roadmap
-
-- Optional webhook-based delivery confirmation.
-- Sanitized example workbook.
-- Dashboard examples using generated historical data.
-- Additional provider-neutral email transport tests.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Before publishing, confirm no secrets, local databases, generated files, production URLs, workbook IDs, or real recipient lists are present. See [Security checklist](docs/security.md).
 
 ## License
 

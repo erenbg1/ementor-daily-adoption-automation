@@ -32,8 +32,8 @@ export class MentorClient {
     return this.authenticatedRequest<T>("POST", path, { ...options, body });
   }
 
-  async getComparisonReportJson(body: Partial<MentorComparisonReportRequest> = {}) {
-    return this.post<MentorReportResponse>("/reports/mentor/driver_performance_delta", {
+  async fetchComparisonReport(body: Partial<MentorComparisonReportRequest> = {}) {
+    return this.post<MentorReportResponse>("/reports/comparison", {
       filter: {},
       periodFilter: null,
       course: "",
@@ -41,17 +41,17 @@ export class MentorClient {
       search: "",
       decorate: "yes",
       selectedLanguage: this.config.languageCode,
-      timeZone: "Europe/Berlin",
+      timeZone: this.config.timeZone,
       ...body,
     });
   }
 
-  async getShiftMetadata() {
-    return this.get<MentorReportResponse>("/reports/driver/shifts/meta");
+  async fetchDailyShiftMetadata() {
+    return this.get<MentorReportResponse>("/reports/daily-shifts/meta");
   }
 
-  async getShiftReportJson(params: MentorShiftReportParams) {
-    return this.get<MentorReportResponse>("/reports/driver/shifts", {
+  async fetchDailyShiftReport(params: MentorShiftReportParams) {
+    return this.get<MentorReportResponse>("/reports/daily-shifts", {
       query: {
         decorate: params.decorate ?? "yes",
         startTime: params.startTime,
@@ -62,8 +62,8 @@ export class MentorClient {
     });
   }
 
-  async getShiftDevicesEnrichment(devices: string[]) {
-    return this.post<MentorReportResponse>("/reports/driver/shifts/devices", { devices });
+  async fetchDailyShiftDeviceDetails(devices: string[]) {
+    return this.post<MentorReportResponse>("/reports/daily-shifts/devices", { devices });
   }
 
   private async authenticatedRequest<T>(method: "GET" | "POST", path: string, options: MentorRequestOptions) {
@@ -145,7 +145,7 @@ export class MentorClient {
       try {
         return await operation();
       } catch (error) {
-        if (!isRetryableMentorError(error) || attempt >= maxAttempts) {
+        if (!isRetryablAdoptionError(error) || attempt >= maxAttempts) {
           throw error;
         }
 
@@ -175,7 +175,7 @@ function isRecoverableAuthError(error: unknown) {
   return error instanceof MentorHttpError && (error.context.status === 401 || error.context.status === 403);
 }
 
-function isRetryableMentorError(error: unknown) {
+function isRetryablAdoptionError(error: unknown) {
   if (!(error instanceof MentorHttpError)) {
     return error instanceof TypeError;
   }

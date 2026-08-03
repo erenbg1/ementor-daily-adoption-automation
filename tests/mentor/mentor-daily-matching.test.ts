@@ -4,7 +4,7 @@ import {
   generateMentorDailyMatchingReport,
   matchMentorDailyRecords,
   normalizeMentorDistanceKm,
-  normalizeMentorStation,
+  normalizeMentorSite,
   parseMentorNumber,
   type MentorComparisonRawRecord,
   type MentorShiftRawRecord,
@@ -16,7 +16,7 @@ function comparison(overrides: Partial<MentorComparisonRawRecord> = {}): MentorC
     distanceKms: "42.50",
     operationalDay: "2026-07-20",
     recordRef: "comparison-1",
-    station: "STATION_B",
+    site: "SITE_B",
     totalTripCount: "7",
     ...overrides,
   };
@@ -27,7 +27,7 @@ function shift(overrides: Partial<MentorShiftRawRecord> = {}): MentorShiftRawRec
     distanceKms: "42.50",
     driverId: 1001,
     localDate: "2026-07-20",
-    location1: "STATION_B",
+    location1: "SITE_B",
     recordRef: "shift-1",
     trip: "7",
     ...overrides,
@@ -35,7 +35,7 @@ function shift(overrides: Partial<MentorShiftRawRecord> = {}): MentorShiftRawRec
 }
 
 describe("Mentor Daily Matching Engine", () => {
-  it("matches one Comparison record to one Shift record by operational day, KM, and station", () => {
+  it("matches one Comparison record to one Shift record by operational day, KM, and site", () => {
     const result = matchMentorDailyRecords([comparison()], [shift()]);
 
     expect(result.matches).toHaveLength(1);
@@ -46,7 +46,7 @@ describe("Mentor Daily Matching Engine", () => {
       matchedDistanceKm: 42.5,
       matchReason: "EXACT_DISTANCE_AND_STATION",
       shiftRecordRef: "shift-1",
-      stationValidationResult: "MATCH",
+      siteValidationResult: "MATCH",
     });
     expect(result.statistics).toMatchObject({
       comparisonRows: 1,
@@ -73,8 +73,8 @@ describe("Mentor Daily Matching Engine", () => {
     expect(result.matches[0].distanceDifferenceKm).toBeCloseTo(0.004);
   });
 
-  it("marks a unique distance match with station mismatch as ambiguous instead of guessing", () => {
-    const result = matchMentorDailyRecords([comparison({ station: "STATION_A" })], [shift({ location1: "STATION_B" })]);
+  it("marks a unique distance match with site mismatch as ambiguous instead of guessing", () => {
+    const result = matchMentorDailyRecords([comparison({ site: "SITE_A" })], [shift({ location1: "SITE_B" })]);
 
     expect(result.matches).toHaveLength(1);
     expect(result.matches[0]).toMatchObject({
@@ -82,7 +82,7 @@ describe("Mentor Daily Matching Engine", () => {
       comparisonRecordRefs: ["comparison-1"],
       matchReason: "STATION_MISMATCH",
       shiftRecordRefs: ["shift-1"],
-      stationValidationResult: "MISMATCH",
+      siteValidationResult: "MISMATCH",
     });
     expect(result.statistics).toMatchObject({
       ambiguousComparisonRows: 1,
@@ -92,33 +92,33 @@ describe("Mentor Daily Matching Engine", () => {
     });
   });
 
-  it("uses station as secondary validation to resolve duplicate KM candidates across stations", () => {
+  it("uses site as secondary validation to resolve duplicate KM candidates across sites", () => {
     const result = matchMentorDailyRecords(
       [
-        comparison({ recordRef: "comparison-stationA", station: "STATION_A" }),
-        comparison({ cdbId: "cdb-2", recordRef: "comparison-stationB", station: "STATION_B" }),
+        comparison({ recordRef: "comparison-siteA", site: "SITE_A" }),
+        comparison({ cdbId: "cdb-2", recordRef: "comparison-siteB", site: "SITE_B" }),
       ],
       [
-        shift({ driverId: 2002, location1: "STATION_B", recordRef: "shift-stationB" }),
-        shift({ driverId: 2001, location1: "STATION_A", recordRef: "shift-stationA" }),
+        shift({ driverId: 2002, location1: "SITE_B", recordRef: "shift-siteB" }),
+        shift({ driverId: 2001, location1: "SITE_A", recordRef: "shift-siteA" }),
       ],
     );
 
     expect(result.matches).toHaveLength(2);
     expect(result.matches.every((match) => match.category === "MATCHED")).toBe(true);
     expect(result.matches.map((match) => [match.comparisonRecordRef, match.shiftRecordRef])).toEqual([
-      ["comparison-stationA", "shift-stationA"],
-      ["comparison-stationB", "shift-stationB"],
+      ["comparison-siteA", "shift-siteA"],
+      ["comparison-siteB", "shift-siteB"],
     ]);
   });
 
   it("marks unresolved duplicate KM candidates as ambiguous", () => {
     const result = matchMentorDailyRecords(
       [
-        comparison({ recordRef: "comparison-a", station: "STATION_B" }),
-        comparison({ cdbId: "cdb-2", recordRef: "comparison-b", station: "STATION_B" }),
+        comparison({ recordRef: "comparison-a", site: "SITE_B" }),
+        comparison({ cdbId: "cdb-2", recordRef: "comparison-b", site: "SITE_B" }),
       ],
-      [shift({ recordRef: "shift-a", location1: "STATION_B" })],
+      [shift({ recordRef: "shift-a", location1: "SITE_B" })],
     );
 
     expect(result.matches).toHaveLength(1);
@@ -155,7 +155,7 @@ describe("Mentor Daily Matching Engine", () => {
   });
 
   it("handles normalization edge cases deterministically", () => {
-    expect(normalizeMentorStation("  station-b / metro  ")).toBe("STATION B METRO");
+    expect(normalizeMentorSite("  site-b / metro  ")).toBe("SITE B METRO");
     expect(parseMentorNumber("1.234,56 km")).toBe(1234.56);
     expect(parseMentorNumber("1,234.56 km")).toBe(1234.56);
     expect(normalizeMentorDistanceKm(" 42,500 km ")).toBe(42.5);

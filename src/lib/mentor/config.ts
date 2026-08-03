@@ -1,11 +1,11 @@
 import { env } from "../env";
 import { MentorConfigurationError } from "./errors";
 
-export const DEFAULT_MENTOR_BASE_URL = "https://mentor-api.example.com";
+export const DEFAULT_MENTOR_BASE_URL = "https://mentor.example.com";
 export const DEFAULT_MENTOR_LANGUAGE = "en";
 export const DEFAULT_MENTOR_REFRESH_SAFETY_WINDOW_MS = 5 * 60 * 1000;
 export const DEFAULT_MENTOR_REQUEST_TIMEOUT_MS = 30_000;
-export const DEFAULT_MENTOR_RETRY_DELAYS_MS = [3_000, 15_000, 60_000, 180_000];
+export const DEFAULT_MENTOR_RETRY_DELAYS_MS = [3_000, 15_000, 60_000];
 
 export type MentorConfig = {
   baseUrl: string;
@@ -15,6 +15,7 @@ export type MentorConfig = {
   refreshSafetyWindowMs: number;
   requestRetryDelaysMs: number[];
   requestTimeoutMs: number;
+  timeZone: string;
   username: string;
 };
 
@@ -72,6 +73,7 @@ export function loadMentorConfig(environment: MentorEnvironment = process.env): 
       DEFAULT_MENTOR_RETRY_DELAYS_MS,
     ),
     requestTimeoutMs: numberFromEnv(environment.MENTOR_REQUEST_TIMEOUT_MS, DEFAULT_MENTOR_REQUEST_TIMEOUT_MS),
+    timeZone: environment.REPORTING_TIME_ZONE?.trim() || env.REPORTING_TIME_ZONE || "Etc/UTC",
     username: requireMentorEnv(environment, "MENTOR_USERNAME"),
   };
 }

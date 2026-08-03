@@ -1,16 +1,32 @@
 function normKey(v) {
   return String(v || '')
     .toUpperCase()
-    .replace(/[ĐÐ]/g, 'D')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Z ]/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\bDJ/g, 'D');
+    .trim();
 }
 
-function normalizeStation(s) {
+const ADOPTION_NAME_MATCH_CONFIG = {
+  minPrefixLength: 4,
+  shortTokenSimilarity: 0.7,
+  longTokenSimilarity: 0.75,
+  aliasSuggestionSimilarity: 0.75,
+  aliasLastTokenSimilarity: 0.75,
+  aliasCommonTokenRatio: 0.6
+};
+
+function adoptionSheetName_(propertyName, fallback) {
+  try {
+    const value = PropertiesService.getScriptProperties().getProperty(propertyName);
+    return value ? String(value).trim() : fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function normalizeSite(s) {
   return String(s || '').replace(/\s+/g, '').toUpperCase();
 }
 
@@ -34,9 +50,11 @@ function isSamePerson(a, b) {
 
       let s = t.length < l.length ? t : l;
       let lo = t.length < l.length ? l : t;
-      if (s.length >= 4 && lo.startsWith(s)) { found = true; break; }
+      if (s.length >= ADOPTION_NAME_MATCH_CONFIG.minPrefixLength && lo.startsWith(s)) { found = true; break; }
 
-      let threshold = Math.min(t.length, l.length) <= 4 ? 0.6 : 0.65;
+      let threshold = Math.min(t.length, l.length) <= 4
+        ? ADOPTION_NAME_MATCH_CONFIG.shortTokenSimilarity
+        : ADOPTION_NAME_MATCH_CONFIG.longTokenSimilarity;
       if (levenSim(t, l) >= threshold) { found = true; break; }
     }
     if (found) match++;
@@ -74,7 +92,7 @@ function levenSim(a, b) {
 
 function getAliasMap(ss) {
   ss = ss || SpreadsheetApp.getActive();
-  const sheet = ss.getSheetByName("ALIAS_TABLE");
+  const sheet = ss.getSheetByName(adoptionSheetName_("ADOPTION_ALIAS_SHEET", "ALIAS_TABLE"));
   if (!sheet) return {};
 
   const data = sheet.getDataRange().getValues();
@@ -92,17 +110,17 @@ function getAliasMap(ss) {
 
 function addAlias(raw, correct, ss) {
   ss = ss || SpreadsheetApp.getActive();
-  let sheet = ss.getSheetByName("ALIAS_TABLE");
+  let sheet = ss.getSheetByName(adoptionSheetName_("ADOPTION_ALIAS_SHEET", "ALIAS_TABLE"));
   if (!sheet) {
-    sheet = ss.insertSheet("ALIAS_TABLE");
+    sheet = ss.insertSheet(adoptionSheetName_("ADOPTION_ALIAS_SHEET", "ALIAS_TABLE"));
     sheet.getRange(1, 1, 1, 2).setValues([["Raw Name", "Correct Name"]]);
   }
   sheet.appendRow([normKey(raw), normKey(correct)]);
 }
 
-function runEMentorMatcher_(ss, filterStation, interactive) {
-  const em = ss.getSheetByName("eMentor_Check").getDataRange().getValues();
-  const ex = ss.getSheetByName("EXPECTED_DRIVERS").getDataRange().getValues();
+function runAdoptionMatcher_(ss, filterSite, interactive) {
+  const em = ss.getSheetByName(adoptionSheetName_("ADOPTION_RAW_IMPORT_SHEET", "Adoption_Check")).getDataRange().getValues();
+  const ex = ss.getSheetByName(adoptionSheetName_("ADOPTION_EXPECTED_SHEET", "EXPECTED_DRIVERS")).getDataRange().getValues();
 
   let aliasMap = getAliasMap(ss);
   let actual = [];
@@ -122,25 +140,25 @@ function runEMentorMatcher_(ss, filterStation, interactive) {
     actualRecords.push({
       key: key,
       rawName: String(raw).trim(),
-      station: normalizeStation(em[i][11])
+      site: normalizeSite(em[i][11])
     });
   }
 
-  let stationA = [];
-  let stationB = [];
-  let expected = { STATION_A: new Map(), STATION_B: new Map() };
-  let matched = { STATION_A: new Set(), STATION_B: new Set() };
-  let unmatchedNames = { STATION_A: [], STATION_B: [] };
+  let siteA = [];
+  let siteB = [];
+  let expected = { SITE_A: new Map(), SITE_B: new Map() };
+  let matched = { SITE_A: new Set(), SITE_B: new Set() };
+  let unmatchedNames = { SITE_A: [], SITE_B: [] };
   let unmatchedActualKeys = new Set();
 
   for (let i = 1; i < ex.length; i++) {
     let name = ex[i][2];
-    let station = normalizeStation(ex[i][3]);
-    if (filterStation && station !== filterStation) continue;
+    let site = normalizeSite(ex[i][3]);
+    if (filterSite && site !== filterSite) continue;
 
     let expectedKey = normKey(name);
-    if (expected[station] && expectedKey && !expected[station].has(expectedKey)) {
-      expected[station].set(expectedKey, name);
+    if (expected[site] && expectedKey && !expected[site].has(expectedKey)) {
+      expected[site].set(expectedKey, name);
     }
 
     let found = false;
@@ -171,15 +189,15 @@ function runEMentorMatcher_(ss, filterStation, interactive) {
 
         let lastB = bestTokens[bestTokens.length - 1];
         let lastE = expectedTokens[expectedTokens.length - 1];
-        let lastTokenMatch = levenSim(lastB, lastE) >= 0.75;
+        let lastTokenMatch = levenSim(lastB, lastE) >= ADOPTION_NAME_MATCH_CONFIG.aliasLastTokenSimilarity;
 
         let commonCount = bestTokens.filter(t => expectedTokens.includes(t)).length;
-        let majorityMatch = commonCount >= Math.ceil(Math.min(bestTokens.length, expectedTokens.length) * 0.6);
+        let majorityMatch = commonCount >= Math.ceil(Math.min(bestTokens.length, expectedTokens.length) * ADOPTION_NAME_MATCH_CONFIG.aliasCommonTokenRatio);
 
         aliasValid = lastTokenMatch || majorityMatch;
       }
 
-      if (bestScore > 0.7 && aliasValid && !handled.has(best + expectedKey)) {
+      if (bestScore > ADOPTION_NAME_MATCH_CONFIG.aliasSuggestionSimilarity && aliasValid && !handled.has(best + expectedKey)) {
         handled.add(best + expectedKey);
 
         if (interactive) {
@@ -196,20 +214,20 @@ function runEMentorMatcher_(ss, filterStation, interactive) {
             actual.push(expectedKey);
             found = true;
           }
-        } else if (unmatchedNames[station]) {
-          unmatchedNames[station].push(best + " → " + expectedKey);
+        } else if (unmatchedNames[site]) {
+          unmatchedNames[site].push(best + " → " + expectedKey);
           unmatchedActualKeys.add(best);
         }
       }
     }
 
-    if (found && matched[station]) {
-      matched[station].add(expectedKey);
+    if (found && matched[site]) {
+      matched[site].add(expectedKey);
     }
 
     if (!found) {
-      if (station === "STATION_A") stationA.push(name);
-      else if (station === "STATION_B") stationB.push(name);
+      if (site === "SITE_A") siteA.push(name);
+      else if (site === "SITE_B") siteB.push(name);
     }
   }
 
@@ -217,72 +235,70 @@ function runEMentorMatcher_(ss, filterStation, interactive) {
     actualRecords: actualRecords,
     expected: expected,
     matched: matched,
-    missing: { STATION_A: stationA, STATION_B: stationB },
+    missing: { SITE_A: siteA, SITE_B: siteB },
     unmatchedActualKeys: unmatchedActualKeys,
     unmatchedNames: unmatchedNames
   };
 }
 
-function checkEMentorDrivers(filterStation) {
-  const result = runEMentorMatcher_(SpreadsheetApp.getActive(), filterStation, true);
-  const stationA = result.missing.STATION_A;
-  const stationB = result.missing.STATION_B;
-  let totalMissing = stationA.length + stationB.length;
+function checkAdoptionDrivers(filterSite) {
+  const result = runAdoptionMatcher_(SpreadsheetApp.getActive(), filterSite, true);
+  const siteA = result.missing.SITE_A;
+  const siteB = result.missing.SITE_B;
+  let totalMissing = siteA.length + siteB.length;
 
   if (totalMissing === 0) {
-    SpreadsheetApp.getUi().alert("✅ Alle Fahrer sind im eMentor aktiv");
+    SpreadsheetApp.getUi().alert("All expected workers have a completed adoption check.");
     return;
   }
 
-  let message = "⚠️ Hinweis:\n";
-  message += "Einige Fahrer könnten später starten. Bitte im Timeline prüfen.\n\n";
-  message += "❌ MISSING eMENTOR (" + totalMissing + "):\n\n";
+  let message = "Missing adoption checks (" + totalMissing + "):\n\n";
 
-  if (!filterStation || filterStation === "STATION_B") {
-    if (stationB.length) {
-      message += "🔵 STATION_B:\n" + stationB.join("\n") + "\n\n";
+  if (!filterSite || filterSite === "SITE_B") {
+    if (siteB.length) {
+      message += "🔵 SITE_B:\n" + siteB.join("\n") + "\n\n";
     }
   }
 
-  if (!filterStation || filterStation === "STATION_A") {
-    if (stationA.length) {
-      message += "🟢 STATION_A:\n" + stationA.join("\n") + "\n\n";
+  if (!filterSite || filterSite === "SITE_A") {
+    if (siteA.length) {
+      message += "🟢 SITE_A:\n" + siteA.join("\n") + "\n\n";
     }
   }
 
   SpreadsheetApp.getUi().alert(message);
 }
 
-function checkEM_STATION_A() { checkEMentorDrivers("STATION_A"); }
-function checkEM_STATION_B() { checkEMentorDrivers("STATION_B"); }
+function checkSiteA() { checkAdoptionDrivers("SITE_A"); }
+function checkSiteB() { checkAdoptionDrivers("SITE_B"); }
 
-function buildEMentorAdoptionSummary_(ss, serviceDate) {
-  const result = runEMentorMatcher_(ss, null, false);
+function buildAdoptionSummary_(ss, serviceDate) {
+  const result = runAdoptionMatcher_(ss, null, false);
   const allExpectedKeys = [];
-  ["STATION_A", "STATION_B"].forEach(function(station) {
-    result.expected[station].forEach(function(name, key) {
+  ["SITE_A", "SITE_B"].forEach(function(site) {
+    result.expected[site].forEach(function(name, key) {
       allExpectedKeys.push(key);
     });
   });
 
-  const extra = { STATION_A: new Map(), STATION_B: new Map() };
+  const extra = { SITE_A: new Map(), SITE_B: new Map() };
   result.actualRecords.forEach(function(record) {
-    if (!extra[record.station]) return;
+    if (!extra[record.site]) return;
 
     let belongsToExpected = allExpectedKeys.some(function(expectedKey) {
       return isSamePerson(record.key, expectedKey);
     });
     if (belongsToExpected || result.unmatchedActualKeys.has(record.key)) return;
 
-    if (!extra[record.station].has(record.key)) {
-      extra[record.station].set(record.key, record.rawName);
+    if (!extra[record.site].has(record.key)) {
+      extra[record.site].set(record.key, record.rawName);
     }
   });
 
-  const stations = {};
-  ["STATION_A", "STATION_B"].forEach(function(station) {
-    const expected = result.expected[station];
-    const matched = result.matched[station];
+  const sites = {};
+  ["SITE_A", "SITE_B"].forEach(function(site) {
+    const expected = result.expected[site];
+    const matched = result.matched[site];
     const missingDrivers = [];
 
     expected.forEach(function(name, key) {
@@ -291,12 +307,12 @@ function buildEMentorAdoptionSummary_(ss, serviceDate) {
 
     const expectedDrivers = expected.size;
     const driversWithCheck = matched.size;
-    stations[station] = {
+    sites[site] = {
       expectedDrivers: expectedDrivers,
       driversWithCheck: driversWithCheck,
       missingDrivers: missingDrivers,
-      extraMentorDrivers: Array.from(extra[station].values()),
-      unmatchedNames: Array.from(new Set(result.unmatchedNames[station])),
+      extraMentorDrivers: Array.from(extra[site].values()),
+      unmatchedNames: Array.from(new Set(result.unmatchedNames[site])),
       adoptionRate: expectedDrivers === 0
         ? 0
         : Math.round((driversWithCheck / expectedDrivers) * 10000) / 10000
@@ -305,13 +321,13 @@ function buildEMentorAdoptionSummary_(ss, serviceDate) {
 
   return {
     serviceDate: serviceDate,
-    stations: stations
+    sites: sites
   };
 }
 
-function clearEMentor() {
-  const sheet = SpreadsheetApp.getActive().getSheetByName("eMentor_Check");
+function clearAdoption() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(adoptionSheetName_("ADOPTION_RAW_IMPORT_SHEET", "Adoption_Check"));
   sheet.clearContents();
   sheet.setActiveSelection("A1");
-  SpreadsheetApp.getUi().alert("🧹 eMentor_Check komplett geleert");
+  SpreadsheetApp.getUi().alert("🧹 Adoption_Check komplett geleert");
 }

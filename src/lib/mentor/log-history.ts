@@ -9,14 +9,14 @@ export type MentorLogHistoryRowInput = {
   lastHash: string | null;
   learnedDate: Date | null;
   operationalDate: Date;
-  primaryStation: string | null;
+  primarySite: string | null;
   rawComparison: Record<string, unknown>;
   resolutionStatus: string;
   resolvedFirstName: string | null;
   resolvedLastName: string | null;
   sourceRecordRef: string | null;
   sourceRowIndex: number;
-  station: string | null;
+  site: string | null;
   totalTripCount: number | null;
 };
 
@@ -48,14 +48,14 @@ export function buildMentorLogHistoryRows(
     lastHash: stringValue(row.lastName) || null,
     learnedDate: row.learned_date ? parseOperationalDate(row.learned_date) : null,
     operationalDate,
-    primaryStation: row.primary_station,
+    primarySite: row.primary_site,
     rawComparison: jsonSafeObject(row),
     resolutionStatus: row.resolution_status,
     resolvedFirstName: row.resolved_first_name,
     resolvedLastName: row.resolved_last_name,
     sourceRecordRef: recordRef(row, index),
     sourceRowIndex: index,
-    station: stringValue(row.station ?? row.location1) || null,
+    site: stringValue(row.site ?? row.location1) || null,
     totalTripCount: parseMentorNumber(row.totalTripCount ?? row.tripCount) ?? null,
   }));
 }
@@ -81,13 +81,13 @@ export async function appendMentorLogHistoryRows(
         firstHash: row.firstHash,
         lastHash: row.lastHash,
         learnedDate: row.learnedDate,
-        primaryStation: row.primaryStation,
+        primarySite: row.primarySite,
         rawComparison: persistedRow.rawComparison,
         resolutionStatus: row.resolutionStatus,
         resolvedFirstName: row.resolvedFirstName,
         resolvedLastName: row.resolvedLastName,
         sourceRecordRef: row.sourceRecordRef,
-        station: row.station,
+        site: row.site,
         totalTripCount: row.totalTripCount,
       },
     });

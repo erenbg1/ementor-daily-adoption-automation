@@ -2,7 +2,7 @@
   "name": "ementor-daily-adoption-automation",
   "version": "0.1.0",
   "private": false,
-  "description": "Public-safe daily eMentor adoption automation worker and Apps Script integration.",
+  "description": "Production-grade automation project for daily eMentor adoption reporting.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -11,9 +11,10 @@
   "scripts": {
     "lint": "node --check scripts/mentor-adoption-worker.mjs && node --check scripts/verify-mentor-auth.mjs",
     "test": "vitest run tests/mentor",
+    "build": "npm run lint && npm test",
     "mentor:verify": "node scripts/verify-mentor-auth.mjs",
-    "mentor:adoption": "node scripts/mentor-adoption-worker.mjs",
-    "mentor:adoption:test": "node scripts/mentor-adoption-worker.mjs --run-mode=test"
+    "adoption:run": "node scripts/mentor-adoption-worker.mjs",
+    "adoption:test": "node scripts/mentor-adoption-worker.mjs --run-mode=test"
   },
   "dependencies": {
     "typescript": "^5.9.3"

@@ -1,4 +1,4 @@
-# Local Development
+# Local development
 
 ## Setup
 
@@ -7,51 +7,30 @@ npm install
 cp .env.example .env.local
 ```
 
-Edit `.env.local` with private values. Do not commit it.
+Edit `.env.local` with private values for your own demo or deployment. Do not commit it.
 
-## Run Checks
+## Checks
 
 ```bash
 npm run lint
 npm test
+npm audit --audit-level=moderate
 ```
 
-## Verify Mentor Access
+## Mentor verification
 
 ```bash
 npm run mentor:verify
 ```
 
-The command checks login and report access using the configured Mentor environment variables.
+This command uses safe placeholder endpoint paths in the public repository. Real private endpoint paths should be configured or implemented outside the public repo.
 
-## Run Optional Adoption Worker
-
-Manual mode:
+## Worker modes
 
 ```bash
-npm run mentor:adoption -- --run-mode=manual
+npm run adoption:run -- --run-mode=manual
+npm run adoption:run -- --run-mode=production
+npm run adoption:test
 ```
 
-Test mode:
-
-```bash
-npm run mentor:adoption:test
-```
-
-Production mode:
-
-```bash
-npm run mentor:adoption -- --run-mode=production
-```
-
-Only use production mode against a correctly configured Apps Script and workbook.
-
-## Local Database
-
-If you use SQLite locally, set:
-
-```text
-MENTOR_LOG_DATABASE_URL=file:./local-mentor-log.db
-```
-
-Database files are ignored by git and should never be committed.
+Only use production mode against a correctly configured workbook and Web App.

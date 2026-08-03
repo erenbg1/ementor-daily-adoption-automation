@@ -1,20 +1,17 @@
 # Screenshot guidance
 
-Screenshots are not committed by default because operational report images can expose private names, dates, emails, workbook IDs, deployment URLs, and report values.
+Commit sanitized screenshots only.
 
-For a public repository, add sanitized screenshots only.
+Acceptable examples:
 
-Recommended example files:
+- sanitized email preview
+- sanitized adoption dashboard
+- sanitized history-table example
 
-- `ementor-email-preview.png`
-- `ementor-dashboard-example.png`
-- `adoption-history-example.png`
+Before adding a screenshot:
 
-Before adding screenshots:
-
-1. Use demo data only.
-2. Remove real driver names and employee IDs.
-3. Remove production URLs.
-4. Remove real email addresses.
-5. Remove private workbook, service, or deployment identifiers.
-6. Confirm browser tabs, account avatars, and address bars are not visible.
+1. Use fictional data.
+2. Remove browser chrome and account details.
+3. Remove real names and emails.
+4. Remove production workbook IDs and deployment URLs.
+5. Remove logos and internal documents.

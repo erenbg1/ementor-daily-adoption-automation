@@ -50,7 +50,7 @@ export class MentorSessionManager {
   }
 
   async login() {
-    const loginEndpoint = "/users/login_with_username_password";
+    const loginEndpoint = "/auth/login";
     const response = await this.fetchWithTimeout(this.url(loginEndpoint), {
       method: "POST",
       headers: {
@@ -92,7 +92,8 @@ export class MentorSessionManager {
       return this.login();
     }
 
-    const response = await this.fetchWithTimeout(this.url("/users/token/refresh"), {
+    const refreshEndpoint = "/auth/refresh";
+    const response = await this.fetchWithTimeout(this.url(refreshEndpoint), {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -107,7 +108,7 @@ export class MentorSessionManager {
     const body = await parseJsonSafely<MentorRefreshResponse>(response);
     if (!response.ok) {
       throw new MentorAuthenticationError("Mentor token refresh failed.", {
-        endpoint: "/users/token/refresh",
+        endpoint: refreshEndpoint,
         method: "POST",
         status: response.status,
       });
@@ -116,7 +117,7 @@ export class MentorSessionManager {
     const token = extractTokenCookie(response.headers, body.tokenTtl);
     if (!token) {
       throw new MentorAuthenticationError("Mentor token refresh did not return a replacement token cookie.", {
-        endpoint: "/users/token/refresh",
+        endpoint: refreshEndpoint,
         method: "POST",
         status: response.status,
       });
@@ -149,7 +150,7 @@ export class MentorSessionManager {
     }
 
     try {
-      await this.fetchWithTimeout(this.url("/users/logout"), {
+      await this.fetchWithTimeout(this.url("/auth/logout"), {
         method: "POST",
         headers: {
           accept: "application/json",

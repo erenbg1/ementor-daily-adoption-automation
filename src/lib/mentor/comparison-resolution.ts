@@ -7,7 +7,7 @@ export type ResolvedMentorComparisonRecord = MentorComparisonRawRecord & {
   dictionary_confirmation_count: number | null;
   learned_date: string | null;
   operational_date?: string;
-  primary_station: string | null;
+  primary_site: string | null;
   resolution_status: MentorComparisonResolutionStatus;
   resolved_first_name: string | null;
   resolved_last_name: string | null;
@@ -73,7 +73,7 @@ async function resolveMentorComparisonRecord(
       ...record,
       dictionary_confirmation_count: dictionaryEntry?.confirmationCount ?? null,
       learned_date: dictionaryEntry ? dateOnly(dictionaryEntry.learnedFromOperationalDate) : null,
-      primary_station: dictionaryEntry?.primaryStation ?? null,
+      primary_site: dictionaryEntry?.primarySite ?? null,
       resolution_status: "CONFLICT",
       resolved_first_name: null,
       resolved_last_name: null,
@@ -88,7 +88,7 @@ async function resolveMentorComparisonRecord(
     ...record,
     dictionary_confirmation_count: dictionaryEntry.confirmationCount,
     learned_date: dateOnly(dictionaryEntry.learnedFromOperationalDate),
-    primary_station: dictionaryEntry.primaryStation,
+    primary_site: dictionaryEntry.primarySite,
     resolution_status: "RESOLVED",
     resolved_first_name: dictionaryEntry.resolvedFirstName,
     resolved_last_name: dictionaryEntry.resolvedLastName,
@@ -100,7 +100,7 @@ function unresolved(record: MentorComparisonRawRecord): ResolvedMentorComparison
     ...record,
     dictionary_confirmation_count: null,
     learned_date: null,
-    primary_station: null,
+    primary_site: null,
     resolution_status: "UNRESOLVED",
     resolved_first_name: null,
     resolved_last_name: null,

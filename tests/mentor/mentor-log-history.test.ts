@@ -12,11 +12,11 @@ function resolvedComparison(overrides: Partial<ResolvedMentorComparisonRecord> =
     lastName: "last-hash",
     learned_date: "2026-05-12",
     overallScore: 800,
-    primary_station: "STATION_B",
+    primary_site: "SITE_B",
     resolution_status: "RESOLVED",
     resolved_first_name: "Ada",
     resolved_last_name: "Lovelace",
-    station: "STATION_B",
+    site: "SITE_B",
     totalTripCount: "4",
     ...overrides,
   };
@@ -35,13 +35,13 @@ describe("Mentor Log_History row builder", () => {
       lastHash: "last-hash",
       learnedDate: new Date("2026-05-12T00:00:00.000Z"),
       operationalDate: new Date("2026-07-20T00:00:00.000Z"),
-      primaryStation: "STATION_B",
+      primarySite: "SITE_B",
       resolutionStatus: "RESOLVED",
       resolvedFirstName: "Ada",
       resolvedLastName: "Lovelace",
       sourceRecordRef: "comparison:ag-grid:7",
       sourceRowIndex: 0,
-      station: "STATION_B",
+      site: "SITE_B",
       totalTripCount: 4,
     });
     expect(rows[0].rawComparison).toMatchObject({
@@ -57,7 +57,7 @@ describe("Mentor Log_History row builder", () => {
         resolvedComparison({
           dictionary_confirmation_count: null,
           learned_date: null,
-          primary_station: null,
+          primary_site: null,
           resolution_status: "UNRESOLVED",
           resolved_first_name: null,
           resolved_last_name: null,
@@ -69,7 +69,7 @@ describe("Mentor Log_History row builder", () => {
     expect(rows[0]).toMatchObject({
       dictionaryConfirmationCount: null,
       learnedDate: null,
-      primaryStation: null,
+      primarySite: null,
       resolutionStatus: "UNRESOLVED",
       resolvedFirstName: null,
       resolvedLastName: null,

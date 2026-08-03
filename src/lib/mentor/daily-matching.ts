@@ -1,6 +1,6 @@
 export type MentorDailyMatchCategory = "MATCHED" | "UNMATCHED_COMPARISON" | "UNMATCHED_SHIFT" | "AMBIGUOUS";
 
-export type MentorStationValidationResult = "MATCH" | "MISMATCH" | "UNAVAILABLE" | "MIXED";
+export type MentorSiteValidationResult = "MATCH" | "MISMATCH" | "UNAVAILABLE" | "MIXED";
 
 export type MentorDailyMatchReason =
   | "EXACT_DISTANCE_AND_STATION"
@@ -31,7 +31,7 @@ export type MentorComparisonRawRecord = {
   pin?: MentorRawRecordValue;
   recordRef?: MentorRawRecordValue;
   reportDate?: MentorRawRecordValue;
-  station?: MentorRawRecordValue;
+  site?: MentorRawRecordValue;
   totalDistanceKm?: MentorRawRecordValue;
   totalTripCount?: MentorRawRecordValue;
   tripCount?: MentorRawRecordValue;
@@ -57,7 +57,7 @@ export type MentorShiftRawRecord = {
   reportDate?: MentorRawRecordValue;
   shiftEndTime?: MentorRawRecordValue;
   shiftStartTime?: MentorRawRecordValue;
-  station?: MentorRawRecordValue;
+  site?: MentorRawRecordValue;
   totalDistanceKm?: MentorRawRecordValue;
   trip?: MentorRawRecordValue;
   tripCount?: MentorRawRecordValue;
@@ -81,7 +81,7 @@ export type MentorDailyMatch = {
   matchedDistanceKm?: number;
   distanceDifferenceKm?: number;
   operationalDay?: string;
-  stationValidationResult: MentorStationValidationResult;
+  siteValidationResult: MentorSiteValidationResult;
   validationNotes: string[];
   matchReason: MentorDailyMatchReason;
 };
@@ -106,7 +106,7 @@ export type MentorDailyMatchingResult = {
 
 type NormalizedComparison = {
   distanceKm?: number;
-  normalizedStation?: string;
+  normalizedSite?: string;
   operationalDay?: string;
   record: MentorComparisonRawRecord;
   ref: string;
@@ -115,7 +115,7 @@ type NormalizedComparison = {
 
 type NormalizedShift = {
   distanceKm?: number;
-  normalizedStation?: string;
+  normalizedSite?: string;
   operationalDay?: string;
   record: MentorShiftRawRecord;
   ref: string;
@@ -126,7 +126,7 @@ type CandidatePair = {
   comparisonIndex: number;
   distanceDifferenceKm: number;
   shiftIndex: number;
-  stationValidationResult: MentorStationValidationResult;
+  siteValidationResult: MentorSiteValidationResult;
 };
 
 const DEFAULT_DISTANCE_TOLERANCE_KM = 0.01;
@@ -145,24 +145,24 @@ export function matchMentorDailyRecords(
   const categorizedShifts = new Set<number>();
 
   for (const component of buildCandidateComponents(candidatePairs)) {
-    const stationMatchedPairs = component.pairs.filter((pair) => pair.stationValidationResult === "MATCH");
-    const usablePairs = stationMatchedPairs.length > 0 ? stationMatchedPairs : component.pairs;
+    const siteMatchedPairs = component.pairs.filter((pair) => pair.siteValidationResult === "MATCH");
+    const usablePairs = siteMatchedPairs.length > 0 ? siteMatchedPairs : component.pairs;
 
     if (canResolveOneToOne(usablePairs, component.comparisonIndexes, component.shiftIndexes)) {
       for (const pair of usablePairs) {
         const comparison = comparisons[pair.comparisonIndex];
         const shift = shifts[pair.shiftIndex];
 
-        if (pair.stationValidationResult === "MISMATCH") {
+        if (pair.siteValidationResult === "MISMATCH") {
           matches.push(
             ambiguousMatch([comparison], [shift], {
               reason: "STATION_MISMATCH",
-              stationValidationResult: "MISMATCH",
+              siteValidationResult: "MISMATCH",
               matchedDistanceKm: averageDistance(comparison.distanceKm, shift.distanceKm),
               distanceDifferenceKm: pair.distanceDifferenceKm,
               operationalDay: comparison.operationalDay ?? shift.operationalDay,
               validationNotes: [
-                "Distance matched, but station validation failed. The matcher does not guess station mismatches.",
+                "Distance matched, but site validation failed. The matcher does not guess site mismatches.",
               ],
             }),
           );
@@ -179,10 +179,10 @@ export function matchMentorDailyRecords(
       matches.push(
         ambiguousMatch(componentComparisons, componentShifts, {
           reason:
-            component.pairs.some((pair) => pair.stationValidationResult === "MISMATCH") && stationMatchedPairs.length === 0
+            component.pairs.some((pair) => pair.siteValidationResult === "MISMATCH") && siteMatchedPairs.length === 0
               ? "STATION_MISMATCH"
               : "DUPLICATE_DISTANCE_CANDIDATES",
-          stationValidationResult: stationValidationForComponent(component.pairs),
+          siteValidationResult: siteValidationForComponent(component.pairs),
           matchedDistanceKm: averageComponentDistance(componentComparisons, componentShifts),
           operationalDay: firstDefined(
             componentComparisons.map((record) => record.operationalDay),
@@ -243,7 +243,7 @@ export function generateMentorDailyMatchingReport(result: MentorDailyMatchingRes
   ].join("\n");
 }
 
-export function normalizeMentorStation(value: unknown) {
+export function normalizeMentorSite(value: unknown) {
   const normalized = stringValue(value)
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -311,7 +311,7 @@ function normalizeComparisonRecord(
     distanceKm: normalizeMentorDistanceKm(
       record.distanceKms ?? record.distanceKm ?? record.totalDistanceKm ?? record.distance,
     ),
-    normalizedStation: normalizeMentorStation(record.station ?? record.location1),
+    normalizedSite: normalizeMentorSite(record.site ?? record.location1),
     operationalDay: normalizeOperationalDay(
       record.operationalDay ?? record.localDate ?? record.reportDate ?? record.date ?? options.operationalDay,
     ),
@@ -328,7 +328,7 @@ function normalizeShiftRecord(
 ): NormalizedShift {
   return {
     distanceKm: normalizeMentorDistanceKm(record.distanceKms ?? record.distanceKm ?? record.totalDistanceKm ?? record.distance),
-    normalizedStation: normalizeMentorStation(record.location1 ?? record.station),
+    normalizedSite: normalizeMentorSite(record.location1 ?? record.site),
     operationalDay: normalizeOperationalDay(
       record.operationalDay ??
         record.localDate ??
@@ -368,7 +368,7 @@ function buildCandidatePairs(
           comparisonIndex,
           distanceDifferenceKm,
           shiftIndex,
-          stationValidationResult: validateStation(comparison.normalizedStation, shift.normalizedStation),
+          siteValidationResult: validateSite(comparison.normalizedSite, shift.normalizedSite),
         });
       }
     });
@@ -463,17 +463,17 @@ function matchedPair(
   distanceToleranceKm: number,
 ): MentorDailyMatch {
   const exactDistance = pair.distanceDifferenceKm === 0;
-  const stationAvailable = pair.stationValidationResult !== "UNAVAILABLE";
+  const siteAvailable = pair.siteValidationResult !== "UNAVAILABLE";
   const validationNotes = [
     exactDistance
       ? "Total distance KM matched exactly for the same operational day."
       : `Total distance KM matched within tolerance ${distanceToleranceKm}.`,
   ];
 
-  if (pair.stationValidationResult === "MATCH") {
-    validationNotes.push("Station validation passed.");
+  if (pair.siteValidationResult === "MATCH") {
+    validationNotes.push("Site validation passed.");
   } else {
-    validationNotes.push("Station validation was unavailable.");
+    validationNotes.push("Site validation was unavailable.");
   }
 
   const tripNote = validateTripCount(comparison.tripCount, shift.tripCount);
@@ -487,13 +487,13 @@ function matchedPair(
     comparisonRecordRefs: [comparison.ref],
     shiftRecordRef: shift.ref,
     shiftRecordRefs: [shift.ref],
-    confidenceScore: stationAvailable ? (exactDistance ? 1 : 0.95) : exactDistance ? 0.9 : 0.85,
+    confidenceScore: siteAvailable ? (exactDistance ? 1 : 0.95) : exactDistance ? 0.9 : 0.85,
     matchedDistanceKm: averageDistance(comparison.distanceKm, shift.distanceKm),
     distanceDifferenceKm: pair.distanceDifferenceKm,
     operationalDay: comparison.operationalDay ?? shift.operationalDay,
-    stationValidationResult: pair.stationValidationResult,
+    siteValidationResult: pair.siteValidationResult,
     validationNotes,
-    matchReason: stationAvailable
+    matchReason: siteAvailable
       ? exactDistance
         ? "EXACT_DISTANCE_AND_STATION"
         : "TOLERANCE_DISTANCE_AND_STATION"
@@ -509,7 +509,7 @@ function ambiguousMatch(
     matchedDistanceKm?: number;
     operationalDay?: string;
     reason: Extract<MentorDailyMatchReason, "DUPLICATE_DISTANCE_CANDIDATES" | "STATION_MISMATCH">;
-    stationValidationResult: MentorStationValidationResult;
+    siteValidationResult: MentorSiteValidationResult;
     validationNotes: string[];
   },
 ): MentorDailyMatch {
@@ -521,7 +521,7 @@ function ambiguousMatch(
     matchedDistanceKm: options.matchedDistanceKm,
     operationalDay: options.operationalDay,
     shiftRecordRefs: shifts.map((shift) => shift.ref),
-    stationValidationResult: options.stationValidationResult,
+    siteValidationResult: options.siteValidationResult,
     validationNotes: options.validationNotes,
     matchReason: options.reason,
   };
@@ -538,7 +538,7 @@ function unmatchedComparison(comparison: NormalizedComparison): MentorDailyMatch
     matchedDistanceKm: comparison.distanceKm,
     operationalDay: comparison.operationalDay,
     shiftRecordRefs: [],
-    stationValidationResult: "UNAVAILABLE",
+    siteValidationResult: "UNAVAILABLE",
     validationNotes:
       invalidReasons.length > 0
         ? invalidReasons
@@ -558,7 +558,7 @@ function unmatchedShift(shift: NormalizedShift): MentorDailyMatch {
     operationalDay: shift.operationalDay,
     shiftRecordRef: shift.ref,
     shiftRecordRefs: [shift.ref],
-    stationValidationResult: "UNAVAILABLE",
+    siteValidationResult: "UNAVAILABLE",
     validationNotes:
       invalidReasons.length > 0
         ? invalidReasons
@@ -602,12 +602,12 @@ function buildStatistics(
   };
 }
 
-function validateStation(comparisonStation?: string, shiftStation?: string): MentorStationValidationResult {
-  if (!comparisonStation || !shiftStation) {
+function validateSite(comparisonSite?: string, shiftSite?: string): MentorSiteValidationResult {
+  if (!comparisonSite || !shiftSite) {
     return "UNAVAILABLE";
   }
 
-  return comparisonStation === shiftStation ? "MATCH" : "MISMATCH";
+  return comparisonSite === shiftSite ? "MATCH" : "MISMATCH";
 }
 
 function validateTripCount(comparisonTripCount?: number, shiftTripCount?: number) {
@@ -620,8 +620,8 @@ function validateTripCount(comparisonTripCount?: number, shiftTripCount?: number
     : `Trip count validation differed: Comparison ${comparisonTripCount}, Shift ${shiftTripCount}.`;
 }
 
-function stationValidationForComponent(pairs: CandidatePair[]): MentorStationValidationResult {
-  const results = new Set(pairs.map((pair) => pair.stationValidationResult));
+function siteValidationForComponent(pairs: CandidatePair[]): MentorSiteValidationResult {
+  const results = new Set(pairs.map((pair) => pair.siteValidationResult));
   if (results.size === 1) {
     return [...results][0] ?? "UNAVAILABLE";
   }

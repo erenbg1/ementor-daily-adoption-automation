@@ -1,106 +1,74 @@
 # Production deployment
 
-This guide describes a generic production deployment for the eMentor daily adoption workflow.
+This guide describes how to deploy the eMentor Daily Adoption Automation safely. It intentionally uses placeholder values instead of production configuration.
 
-Production values must be provided through Railway variables and Apps Script properties. Do not commit production values.
-
-## Recommended services
+## Services
 
 ```mermaid
 flowchart LR
-  Cron["Railway cron"] --> Worker["Adoption worker"]
-  Worker --> Mentor["Mentor API"]
+  Cron["Scheduler"] --> Worker["Adoption worker"]
+  Worker --> Provider["Mentor adapter"]
   Worker --> AppsScript["Apps Script Web App"]
   AppsScript --> Sheet["Google Sheet"]
   AppsScript --> Gmail["GmailApp"]
 ```
 
-## Railway environment variables
+## Worker variables
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `MENTOR_USERNAME` | Yes | Mentor API username |
-| `MENTOR_PASSWORD` | Yes | Mentor API password |
-| `MENTOR_COMPANY` | Yes | Mentor company or tenant value |
-| `MENTOR_BASE_URL` | Yes | Mentor API base URL |
-| `MENTOR_LANGUAGE_CODE` | No | Defaults to `en` |
+| `MENTOR_USERNAME` | Yes | Mentor username |
+| `MENTOR_PASSWORD` | Yes | Mentor password |
+| `MENTOR_COMPANY` | If applicable | Mentor tenant/company value |
+| `MENTOR_BASE_URL` | Yes | Mentor base URL |
+| `MENTOR_LANGUAGE_CODE` | No | Example localization value |
 | `MENTOR_REQUEST_TIMEOUT_MS` | No | Request timeout |
 | `MENTOR_REQUEST_RETRY_DELAYS_MS` | No | Comma-separated retry delays |
-| `EMENTOR_ADOPTION_WEB_APP_URL` | Yes | Apps Script Web App endpoint |
-| `EMENTOR_ADOPTION_SHARED_SECRET` | Yes | Shared secret used to sign payloads |
-| `TZ` | Yes | Use the operational timezone for schedules |
+| `ADOPTION_WEB_APP_URL` | Yes | Apps Script Web App endpoint |
+| `ADOPTION_SHARED_SECRET` | Yes | Shared secret used to sign payloads |
+| `REPORTING_TIME_ZONE` | No | Example default: `Etc/UTC` |
+| `REPORTING_RUN_HOUR` | No | Example default: `18` |
+| `REPORTING_SKIP_WEEKDAYS` | No | Comma-separated weekday numbers, where `0` is the first day of the week in JavaScript date handling |
 
 ## Apps Script properties
 
 | Property | Required | Description |
 | --- | --- | --- |
-| `EMENTOR_ADOPTION_SPREADSHEET_ID` | Yes | Google Sheet ID for the adoption workbook |
-| `EMENTOR_ADOPTION_SHARED_SECRET` | Yes | Same shared secret used by Railway |
-| `EMENTOR_ADOPTION_PER_RECIPIENT_EMAIL_ENABLED` | Production email only | Set to `true` after delivery tests pass |
-| `EMENTOR_ADOPTION_EMAIL_RECIPIENTS` | Production email only | Approved recipient allowlist |
+| `ADOPTION_SPREADSHEET_ID` | Yes | Google Sheet ID |
+| `ADOPTION_SHARED_SECRET` | Yes | Same shared secret used by the worker |
+| `ADOPTION_RAW_IMPORT_SHEET` | No | Raw report tab name |
+| `ADOPTION_EXPECTED_SHEET` | No | Expected workers tab name |
+| `ADOPTION_ALIAS_SHEET` | No | Alias table tab name |
+| `ADOPTION_TIME_ZONE` | No | Reporting timezone |
+| `ADOPTION_RUN_HOUR` | No | Reporting hour |
+| `ADOPTION_SKIP_WEEKDAYS` | No | Weekday skip config |
+| `ADOPTION_PER_RECIPIENT_EMAIL_ENABLED` | Email only | Enable report email |
+| `ADOPTION_EMAIL_RECIPIENTS` | Email only | Approved recipient allowlist |
 
-## Worker commands
-
-Verify Mentor credentials:
+## Commands
 
 ```bash
 npm run mentor:verify
+npm run adoption:run -- --run-mode=manual
+npm run adoption:run -- --run-mode=production
+npm run adoption:test
 ```
 
-Run production mode:
+## Deployment checklist
 
-```bash
-npm run mentor:adoption -- --run-mode=production
-```
-
-Run non-production checks:
-
-```bash
-npm run mentor:adoption -- --run-mode=manual
-npm run mentor:adoption:test
-```
-
-## Scheduler
-
-Configure the production schedule in Railway.
-
-Recommended behavior:
-
-- Use the operational timezone.
-- Run after the same-day Shift Report is expected to be available.
-- Keep Sunday suppression in the worker or Apps Script layer.
-- Keep runs idempotent through the immutable `ADOPTION_HISTORY` check.
-- Alert operators on repeated failures.
-
-## Apps Script Web App
-
-1. Copy `apps-script/ementor.gs` and `apps-script/adoption.gs` into the Apps Script project attached to the workbook.
-2. Set required script properties.
-3. Deploy as a Web App.
-4. Execute as the account that owns the intended Gmail mailbox.
-5. Authorize Sheets and Gmail scopes.
-6. Store the Web App URL in Railway.
-
-## Production checklist
-
-1. Install dependencies.
-2. Configure Railway environment variables.
-3. Configure Apps Script properties.
-4. Deploy the Apps Script Web App.
-5. Run `npm run lint`.
-6. Run `npm test`.
-7. Run `npm run mentor:verify`.
-8. Run one manual adoption execution.
-9. Run one test email to a controlled recipient.
-10. Confirm the test appears in Sent and is received.
-11. Enable production email.
-12. Enable the Railway schedule.
+1. Configure Mentor credentials outside git.
+2. Configure Apps Script properties.
+3. Deploy Apps Script as a Web App.
+4. Run lint and tests.
+5. Verify Mentor connectivity.
+6. Run a manual adoption execution.
+7. Run a controlled email test.
+8. Enable scheduled production only after local and mailbox checks pass.
 
 ## Rollback
 
-1. Disable the Railway schedule.
-2. Disable production email in Apps Script properties.
-3. Revert to the previous Apps Script deployment if needed.
-4. Revert Railway to the previous deployment if needed.
-5. Rotate any exposed secret.
-6. Run a manual verification before re-enabling production.
+1. Disable the scheduler.
+2. Disable production email.
+3. Revert the worker deployment.
+4. Revert the Apps Script deployment.
+5. Rotate exposed secrets if any were leaked.

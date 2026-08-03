@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  berlinDateTime,
-  berlinDayBoundsMs,
   buildAdoptionEmail,
   buildAdoptionEmailHtml,
-  mapShiftRowsToEMentor,
+  mapShiftRowsToAdoptionImport,
   parseRunModeArg,
+  reportingDateTime,
   runMentorAdoptionWorker,
+  serviceDayBoundsMs,
   signAdoptionPayload,
 } from "../../scripts/mentor-adoption-worker.mjs";
 
@@ -19,45 +19,45 @@ describe("Mentor D0 adoption worker", () => {
     expect(() => parseRunModeArg(["--run-mode=invalid"])).toThrow("runMode must be test, manual or production");
   });
 
-  it("uses the Europe/Berlin D0 date in summer and winter", () => {
-    expect(berlinDateTime(new Date("2026-07-31T16:00:00.000Z"))).toMatchObject({
+  it("uses the configured reporting timezone date in summer and winter", () => {
+    expect(reportingDateTime(new Date("2026-07-31T18:00:00.000Z"), "Etc/UTC")).toMatchObject({
       hour: 18,
       serviceDate: "2026-07-31",
     });
-    expect(berlinDateTime(new Date("2026-01-15T17:00:00.000Z"))).toMatchObject({
+    expect(reportingDateTime(new Date("2026-01-15T18:00:00.000Z"), "Etc/UTC")).toMatchObject({
       hour: 18,
       serviceDate: "2026-01-15",
     });
   });
 
   it("creates Berlin-local day bounds for the Mentor Shift Report request", () => {
-    const bounds = berlinDayBoundsMs("2026-07-31");
-    expect(new Date(bounds.startTime).toISOString()).toBe("2026-07-30T22:00:00.000Z");
-    expect(new Date(bounds.endTime).toISOString()).toBe("2026-07-31T21:59:59.000Z");
+    const bounds = serviceDayBoundsMs("2026-07-31");
+    expect(new Date(bounds.startTime).toISOString()).toBe("2026-07-31T00:00:00.000Z");
+    expect(new Date(bounds.endTime).toISOString()).toBe("2026-07-31T23:59:59.000Z");
   });
 
-  it("skips scheduled production execution on Sunday", async () => {
+  it("skips scheduled production execution on configured weekdays", async () => {
     await expect(
       runMentorAdoptionWorker({
-        now: new Date("2026-08-02T16:00:00.000Z"),
+        now: new Date("2026-08-02T18:00:00.000Z"),
         runMode: "production",
       }),
     ).resolves.toMatchObject({
-      action: "SKIPPED_SUNDAY",
-      berlinTime: "2026-08-02T18:00:00[Europe/Berlin]",
+      action: "SKIPPED_CONFIGURED_WEEKDAY",
+      reportingTime: "2026-08-02T18:00:00[Etc/UTC]",
     });
   });
 
-  it("maps the live Shift Report fields into eMentor_Check A:L", () => {
+  it("maps the live Shift Report fields into Adoption_Check A:L", () => {
     expect(
-      mapShiftRowsToEMentor([
+      mapShiftRowsToAdoptionImport([
         {
           device: "Phone",
           distanceKms: "42.5",
           duration: "08:10",
           firstName: "Ada",
           lastName: "Lovelace",
-          location1: "STATION_B",
+          location1: "SITE_B",
           shiftEndTime: "18:00",
           shiftStartTime: 12345,
           shortTrip: false,
@@ -67,21 +67,21 @@ describe("Mentor D0 adoption worker", () => {
         },
       ]),
     ).toEqual([
-      ["Ada", "Lovelace", "VIN-1", 12345, "18:00", "08:10", "42.5", "7", false, "Phone", "Supported", "STATION_B"],
+      ["Ada", "Lovelace", "VIN-1", 12345, "18:00", "08:10", "42.5", "7", false, "Phone", "Supported", "SITE_B"],
     ]);
   });
 
   it("formats the adoption email with a weighted overall summary", () => {
     const email = buildAdoptionEmail({
       serviceDate: "2026-07-31",
-      stations: {
-        STATION_A: {
+      sites: {
+        SITE_A: {
           expectedDrivers: 32,
           driversWithCheck: 27,
           missingDrivers: ["Driver One"],
           adoptionRate: 0.84375,
         },
-        STATION_B: {
+        SITE_B: {
           expectedDrivers: 45,
           driversWithCheck: 29,
           missingDrivers: ["Zeta Driver", "Alpha Driver"],
@@ -94,10 +94,10 @@ describe("Mentor D0 adoption worker", () => {
     expect(email).toContain("- Drivers with eMentor Check: 56");
     expect(email).toContain("- Missing Drivers: 21");
     expect(email).toContain("- Overall Adoption Rate: 72.7%");
-    expect(email).toContain("STATION_A\n- Expected Drivers: 32");
+    expect(email).toContain("SITE_A\n- Expected Drivers: 32");
     expect(email).toContain("- Adoption Rate: 84.4%");
     expect(email).toContain("Drivers without eMentor Check:\n- Driver One");
-    expect(email).toContain("STATION_B\n- Expected Drivers: 45");
+    expect(email).toContain("SITE_B\n- Expected Drivers: 45");
     expect(email).toContain("- Adoption Rate: 64.4%");
     expect(email).toContain("- Alpha Driver\n- Zeta Driver");
     expect(email).toContain("should be verified by the dispatcher before taking action.");
@@ -106,9 +106,9 @@ describe("Mentor D0 adoption worker", () => {
   it("shows an explicit empty missing-driver list", () => {
     const email = buildAdoptionEmail({
       serviceDate: "2026-07-31",
-      stations: {
-        STATION_A: { expectedDrivers: 0, driversWithCheck: 0, missingDrivers: [], adoptionRate: 0 },
-        STATION_B: { expectedDrivers: 1, driversWithCheck: 1, missingDrivers: [], adoptionRate: 1 },
+      sites: {
+        SITE_A: { expectedDrivers: 0, driversWithCheck: 0, missingDrivers: [], adoptionRate: 0 },
+        SITE_B: { expectedDrivers: 1, driversWithCheck: 1, missingDrivers: [], adoptionRate: 1 },
       },
     });
 
@@ -116,18 +116,18 @@ describe("Mentor D0 adoption worker", () => {
     expect(email).toContain("- Overall Adoption Rate: 100.0%");
   });
 
-  it("formats a professional HTML email with overall, station, and notes sections", () => {
+  it("formats a professional HTML email with overall, site, and notes sections", () => {
     const html = buildAdoptionEmailHtml({
-      generatedAt: "2026-07-31T16:00:00.000Z",
+      generatedAt: "2026-07-31T18:00:00.000Z",
       serviceDate: "2026-07-31",
-      stations: {
-        STATION_A: {
+      sites: {
+        SITE_A: {
           expectedDrivers: 32,
           driversWithCheck: 27,
           missingDrivers: ["Zeta Driver", "Driver <One>", "Alpha Driver"],
           adoptionRate: 0.84375,
         },
-        STATION_B: {
+        SITE_B: {
           expectedDrivers: 45,
           driversWithCheck: 29,
           missingDrivers: [],
@@ -137,8 +137,8 @@ describe("Mentor D0 adoption worker", () => {
     });
 
     expect(html).toContain("<h1");
-    expect(html.indexOf(">OVERALL</h2>")).toBeLessThan(html.indexOf(">STATION_A</h2>"));
-    expect(html.indexOf(">STATION_A</h2>")).toBeLessThan(html.indexOf(">STATION_B</h2>"));
+    expect(html.indexOf(">OVERALL</h2>")).toBeLessThan(html.indexOf(">SITE_A</h2>"));
+    expect(html.indexOf(">SITE_A</h2>")).toBeLessThan(html.indexOf(">SITE_B</h2>"));
     expect(html).toContain("<strong>2026-07-31</strong>");
     expect(html).toContain("56 of 77 expected drivers completed their eMentor Check today (72.7% overall adoption).");
     expect(html).toContain(">77</div>");
@@ -151,40 +151,40 @@ describe("Mentor D0 adoption worker", () => {
     expect(html).toContain("color:#6b7280");
     expect(html).toContain("color:#2474c6");
     expect(html).toContain("color:#2e7d32");
-    expect(html).toContain("31 Jul 2026, 18:00 Europe/Berlin");
+    expect(html).toContain("31 Jul 2026, 18:00 Etc/UTC");
     expect(html).toContain(">Notes</h2>");
     expect(html.match(/<hr /g)).toHaveLength(3);
   });
 
   it("downloads D0, signs the payload, and prints the Apps Script summary", async () => {
-    const previousUrl = process.env.EMENTOR_ADOPTION_WEB_APP_URL;
-    const previousSecret = process.env.EMENTOR_ADOPTION_SHARED_SECRET;
-    process.env.EMENTOR_ADOPTION_WEB_APP_URL = "https://example.test/adoption";
-    process.env.EMENTOR_ADOPTION_SHARED_SECRET = "test-shared-secret";
+    const previousUrl = process.env.ADOPTION_WEB_APP_URL;
+    const previousSecret = process.env.ADOPTION_SHARED_SECRET;
+    process.env.ADOPTION_WEB_APP_URL = "https://example.test/adoption";
+    process.env.ADOPTION_SHARED_SECRET = "test-shared-secret";
 
     let mentorRequest: unknown;
     let postedBody: { serviceDate: string; runMode: string; rows: unknown[]; signature: string };
     const summary = {
-      generatedAt: "2026-07-31T16:00:05.000Z",
+      generatedAt: "2026-07-31T18:00:05.000Z",
       runMode: "manual",
       serviceDate: "2026-07-31",
-      snapshotTime: "18:00 Europe/Berlin",
-      stations: {
-        STATION_A: { expectedDrivers: 1, driversWithCheck: 1 },
-        STATION_B: { expectedDrivers: 1, driversWithCheck: 0 },
+      snapshotTime: "18:00 Etc/UTC",
+      sites: {
+        SITE_A: { expectedDrivers: 1, driversWithCheck: 1 },
+        SITE_B: { expectedDrivers: 1, driversWithCheck: 0 },
       },
     };
 
     try {
       const result = await runMentorAdoptionWorker({
-        now: new Date("2026-07-31T16:00:00.000Z"),
+        now: new Date("2026-07-31T18:00:00.000Z"),
         mentorClient: {
-          async getShiftReportJson(request: unknown) {
+          async fetchDailyShiftReport(request: unknown) {
             mentorRequest = request;
             return {
               data: [
-                { firstName: "Ada", lastName: "Lovelace", location1: "STATION_A" },
-                { firstName: "Ada", lastName: "Lovelace", location1: "STATION_A" },
+                { firstName: "Ada", lastName: "Lovelace", location1: "SITE_A" },
+                { firstName: "Ada", lastName: "Lovelace", location1: "SITE_A" },
               ],
             };
           },
@@ -212,18 +212,18 @@ describe("Mentor D0 adoption worker", () => {
       );
       expect(result).toEqual(summary);
     } finally {
-      if (previousUrl === undefined) delete process.env.EMENTOR_ADOPTION_WEB_APP_URL;
-      else process.env.EMENTOR_ADOPTION_WEB_APP_URL = previousUrl;
-      if (previousSecret === undefined) delete process.env.EMENTOR_ADOPTION_SHARED_SECRET;
-      else process.env.EMENTOR_ADOPTION_SHARED_SECRET = previousSecret;
+      if (previousUrl === undefined) delete process.env.ADOPTION_WEB_APP_URL;
+      else process.env.ADOPTION_WEB_APP_URL = previousUrl;
+      if (previousSecret === undefined) delete process.env.ADOPTION_SHARED_SECRET;
+      else process.env.ADOPTION_SHARED_SECRET = previousSecret;
     }
   });
 
   it("does not add a separate Railway email provider step to production results", async () => {
-    const previousUrl = process.env.EMENTOR_ADOPTION_WEB_APP_URL;
-    const previousSecret = process.env.EMENTOR_ADOPTION_SHARED_SECRET;
-    process.env.EMENTOR_ADOPTION_WEB_APP_URL = "https://example.test/adoption";
-    process.env.EMENTOR_ADOPTION_SHARED_SECRET = "test-shared-secret";
+    const previousUrl = process.env.ADOPTION_WEB_APP_URL;
+    const previousSecret = process.env.ADOPTION_SHARED_SECRET;
+    process.env.ADOPTION_WEB_APP_URL = "https://example.test/adoption";
+    process.env.ADOPTION_SHARED_SECRET = "test-shared-secret";
 
     const summary = {
       emailSubmission: {
@@ -236,24 +236,24 @@ describe("Mentor D0 adoption worker", () => {
         subject: "eMentor Daily Adoption Report — 2026-07-31",
         textBody: "text",
       },
-      generatedAt: "2026-07-31T16:00:05.000Z",
+      generatedAt: "2026-07-31T18:00:05.000Z",
       history: { snapshotCreated: true },
       runMode: "production",
       serviceDate: "2026-07-31",
-      snapshotTime: "18:00 Europe/Berlin",
-      stations: {
-        STATION_A: { expectedDrivers: 1, driversWithCheck: 1 },
-        STATION_B: { expectedDrivers: 1, driversWithCheck: 0 },
+      snapshotTime: "18:00 Etc/UTC",
+      sites: {
+        SITE_A: { expectedDrivers: 1, driversWithCheck: 1 },
+        SITE_B: { expectedDrivers: 1, driversWithCheck: 0 },
       },
     };
 
     try {
       const result = await runMentorAdoptionWorker({
-        now: new Date("2026-07-31T16:00:00.000Z"),
+        now: new Date("2026-07-31T18:00:00.000Z"),
         runMode: "production",
         mentorClient: {
-          async getShiftReportJson() {
-            return { data: [{ firstName: "Ada", lastName: "Lovelace", location1: "STATION_A" }] };
+          async fetchDailyShiftReport() {
+            return { data: [{ firstName: "Ada", lastName: "Lovelace", location1: "SITE_A" }] };
           },
         },
         fetchImpl: async (_url: string | URL | Request, init?: RequestInit) => {
@@ -266,10 +266,10 @@ describe("Mentor D0 adoption worker", () => {
       expect(result).toEqual(summary);
       expect(result.emailDeliveryResult).toBeUndefined();
     } finally {
-      if (previousUrl === undefined) delete process.env.EMENTOR_ADOPTION_WEB_APP_URL;
-      else process.env.EMENTOR_ADOPTION_WEB_APP_URL = previousUrl;
-      if (previousSecret === undefined) delete process.env.EMENTOR_ADOPTION_SHARED_SECRET;
-      else process.env.EMENTOR_ADOPTION_SHARED_SECRET = previousSecret;
+      if (previousUrl === undefined) delete process.env.ADOPTION_WEB_APP_URL;
+      else process.env.ADOPTION_WEB_APP_URL = previousUrl;
+      if (previousSecret === undefined) delete process.env.ADOPTION_SHARED_SECRET;
+      else process.env.ADOPTION_SHARED_SECRET = previousSecret;
     }
   });
 });

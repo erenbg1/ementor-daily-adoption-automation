@@ -5,7 +5,7 @@
   <rect x="180" y="60" width="1140" height="830" rx="28" fill="#ffffff" stroke="#d1d5db"/>
   <text x="230" y="135" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#111827">eMentor Daily Adoption Report</text>
   <text x="230" y="185" font-family="Arial, sans-serif" font-size="24" fill="#374151">Service Date: 2026-07-31</text>
-  <text x="230" y="235" font-family="Arial, sans-serif" font-size="24" fill="#111827">56 of 77 expected drivers completed their eMentor Check today (72.7% overall adoption).</text>
+  <text x="230" y="235" font-family="Arial, sans-serif" font-size="24" fill="#111827">56 of 77 expected workers completed their adoption check today (72.7% overall adoption).</text>
   <line x1="230" y1="285" x2="1270" y2="285" stroke="#e5e7eb" stroke-width="3"/>
   <text x="230" y="340" font-family="Arial, sans-serif" font-size="32" font-weight="700" fill="#6b7280">OVERALL</text>
   <rect x="230" y="370" width="230" height="120" rx="16" fill="#f9fafb" stroke="#e5e7eb"/>
@@ -21,11 +21,11 @@
   <text x="1025" y="420" font-family="Arial, sans-serif" font-size="20" fill="#6b7280">Adoption</text>
   <text x="1025" y="465" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#111827">72.7%</text>
   <line x1="230" y1="540" x2="1270" y2="540" stroke="#e5e7eb" stroke-width="3"/>
-  <text x="230" y="595" font-family="Arial, sans-serif" font-size="32" font-weight="700" fill="#2474c6">STATION_A</text>
+  <text x="230" y="595" font-family="Arial, sans-serif" font-size="32" font-weight="700" fill="#2474c6">SITE_A</text>
   <text x="230" y="640" font-family="Arial, sans-serif" font-size="22" fill="#111827">Expected: 32 · Checked: 27 · Missing: 5 · Adoption: 84.4%</text>
-  <text x="230" y="690" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">Drivers without eMentor Check</text>
-  <text x="250" y="730" font-family="Arial, sans-serif" font-size="20" fill="#374151">- Example Driver One</text>
-  <text x="250" y="765" font-family="Arial, sans-serif" font-size="20" fill="#374151">- Example Driver Two</text>
+  <text x="230" y="690" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">Workers without adoption check</text>
+  <text x="250" y="730" font-family="Arial, sans-serif" font-size="20" fill="#374151">- Example Worker One</text>
+  <text x="250" y="765" font-family="Arial, sans-serif" font-size="20" fill="#374151">- Example Worker Two</text>
   <line x1="230" y1="815" x2="1270" y2="815" stroke="#e5e7eb" stroke-width="3"/>
-  <text x="230" y="860" font-family="Arial, sans-serif" font-size="20" fill="#6b7280">Generated automatically on 31 Jul 2026, 18:00 Europe/Berlin</text>
+  <text x="230" y="860" font-family="Arial, sans-serif" font-size="20" fill="#6b7280">Generated automatically on 31 Jul 2026, 18:00 Etc/UTC</text>
 </svg>

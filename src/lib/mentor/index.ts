@@ -4,7 +4,7 @@ export {
   generateMentorDailyMatchingReport,
   matchMentorDailyRecords,
   normalizeMentorDistanceKm,
-  normalizeMentorStation,
+  normalizeMentorSite,
   parseMentorNumber,
   type MentorComparisonRawRecord,
   type MentorDailyMatch,
