@@ -116,24 +116,10 @@ export async function runMentorAdoptionWorker({
 
 async function postJsonToAppsScript(url, requestBody, fetchImpl) {
   const body = JSON.stringify(requestBody);
-  const request = {
+  return fetchImpl(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
-    redirect: "manual",
-  };
-  const response = await fetchImpl(url, request);
-  if (![301, 302, 303, 307, 308].includes(response.status)) {
-    return response;
-  }
-
-  const location = response.headers.get("location");
-  if (!location) {
-    return response;
-  }
-
-  return fetchImpl(location, {
-    method: "GET",
     redirect: "follow",
   });
 }

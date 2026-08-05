@@ -37,6 +37,10 @@ class MockSheet {
     return Math.max(this.data.length, 100);
   }
 
+  getMaxColumns() {
+    return Math.max(...this.data.map((row) => row.length), 12);
+  }
+
   insertRowsAfter(_after: number, count: number) {
     for (let i = 0; i < count; i += 1) this.data.push([]);
   }
@@ -65,6 +69,7 @@ class MockSheet {
           });
         });
       },
+      breakApart: () => undefined,
     };
   }
 
@@ -147,6 +152,7 @@ function buildRuntime({ emailEnabled = false, expectedDate = berlinToday() } = {
       },
     },
     SpreadsheetApp: {
+      flush: () => undefined,
       getActive: () => ss,
       getUi: () => ui,
       openById: () => ss,

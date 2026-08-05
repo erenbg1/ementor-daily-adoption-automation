@@ -262,7 +262,7 @@ function replaceAdoptionCheck_(ss, rows) {
     if (!Array.isArray(row)) {
       throw new Error("Shift Report row " + (index + 1) + " is not an array.");
     }
-    const values = row.slice(0, 12);
+    const values = row.slice(0, 12).map(adoptionImportCell_);
     while (values.length < 12) values.push("");
     return values;
   });
@@ -272,11 +272,64 @@ function replaceAdoptionCheck_(ss, rows) {
     sheet.insertRowsAfter(sheet.getMaxRows(), requiredRows - sheet.getMaxRows());
   }
 
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
   sheet.getRange(1, 1, sheet.getMaxRows(), 12).clearContent();
   sheet.getRange(1, 1, 1, 12).setValues([ADOPTION_HEADERS]);
   if (normalizedRows.length) {
-    sheet.getRange(2, 1, normalizedRows.length, 12).setValues(normalizedRows);
+    const chunkSize = 25;
+    for (let start = 0; start < normalizedRows.length; start += chunkSize) {
+      const chunk = normalizedRows.slice(start, start + chunkSize);
+      sheet.getRange(start + 2, 1, chunk.length, 12).setValues(chunk);
+    }
+    SpreadsheetApp.flush();
+    repairAdoptionImportCriticalCells_(sheet, normalizedRows);
+    verifyAdoptionImportWrite_(sheet, normalizedRows);
   }
+}
+
+function adoptionImportCell_(value) {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value;
+  const valueType = typeof value;
+  if (valueType === "string" || valueType === "number" || valueType === "boolean") return value;
+  return JSON.stringify(value);
+}
+
+function verifyAdoptionImportWrite_(sheet, expectedRows) {
+  const writtenRows = sheet.getRange(2, 1, expectedRows.length, 12).getValues();
+  const checkedColumns = [0, 1, 2, 11];
+  for (let i = 0; i < expectedRows.length; i++) {
+    for (let c = 0; c < checkedColumns.length; c++) {
+      const j = checkedColumns[c];
+      if (String(writtenRows[i][j] || "") !== String(expectedRows[i][j] || "")) {
+        throw new Error(
+          "eMentor_Check import verification failed at row "
+          + (i + 2)
+          + ", column "
+          + (j + 1)
+          + "."
+        );
+      }
+    }
+  }
+}
+
+function repairAdoptionImportCriticalCells_(sheet, expectedRows) {
+  const writtenRows = sheet.getRange(2, 1, expectedRows.length, 12).getValues();
+  const checkedColumns = [0, 1, 2, 11];
+  let repaired = false;
+
+  for (let i = 0; i < expectedRows.length; i++) {
+    for (let c = 0; c < checkedColumns.length; c++) {
+      const j = checkedColumns[c];
+      if (String(writtenRows[i][j] || "") !== String(expectedRows[i][j] || "")) {
+        sheet.getRange(i + 2, j + 1).setValue(expectedRows[i][j]);
+        repaired = true;
+      }
+    }
+  }
+
+  if (repaired) SpreadsheetApp.flush();
 }
 
 function persistAdoptionHistory_(ss, summary) {
