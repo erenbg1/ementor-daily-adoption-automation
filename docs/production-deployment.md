@@ -26,8 +26,11 @@ flowchart LR
 | `MENTOR_REQUEST_RETRY_DELAYS_MS` | No | Comma-separated retry delays |
 | `ADOPTION_WEB_APP_URL` | Yes | Apps Script Web App endpoint |
 | `ADOPTION_SHARED_SECRET` | Yes | Shared secret used to sign payloads |
-| `REPORTING_TIME_ZONE` | No | Example default: `Etc/UTC` |
-| `REPORTING_RUN_HOUR` | No | Example default: `18` |
+| `REPORTING_TIME_ZONE` | No | Default: `Europe/Berlin` |
+| `REPORTING_OPERATIONAL_RUN_HOUR` | No | Operational snapshot hour. Default: `18` |
+| `REPORTING_OPERATIONAL_RUN_MINUTE` | No | Operational snapshot minute. Default: `15` |
+| `REPORTING_FINAL_RUN_HOUR` | No | Final daily report hour. Default: `22` |
+| `REPORTING_FINAL_RUN_MINUTE` | No | Final daily report minute. Default: `30` |
 | `REPORTING_SKIP_WEEKDAYS` | No | Comma-separated weekday numbers, where `0` is the first day of the week in JavaScript date handling |
 
 ## Apps Script properties
@@ -41,6 +44,7 @@ flowchart LR
 | `ADOPTION_ALIAS_SHEET` | No | Alias table tab name |
 | `ADOPTION_TIME_ZONE` | No | Reporting timezone |
 | `ADOPTION_RUN_HOUR` | No | Reporting hour |
+| `ADOPTION_RUN_MINUTE` | No | Reporting minute |
 | `ADOPTION_SKIP_WEEKDAYS` | No | Weekday skip config |
 | `ADOPTION_PER_RECIPIENT_EMAIL_ENABLED` | Email only | Enable report email |
 | `ADOPTION_EMAIL_RECIPIENTS` | Email only | Approved recipient allowlist |
@@ -53,6 +57,21 @@ npm run adoption:run -- --run-mode=manual
 npm run adoption:run -- --run-mode=production
 npm run adoption:test
 ```
+
+## Production schedule
+
+The production schedule has two Monday–Saturday reports:
+
+- **18:15 Europe/Berlin — Operational Snapshot**: sends the HTML report and does not write `ADOPTION_HISTORY`.
+- **22:30 Europe/Berlin — Final Daily Report**: sends the HTML report and is the only run that writes `ADOPTION_HISTORY`.
+
+Railway cron is configured as:
+
+```cron
+15,30 16,17,20,21 * * 1-6
+```
+
+Railway evaluates cron in UTC, so the worker also has a Berlin-time guard. Only invocations that are exactly 18:15 or 22:30 Europe/Berlin proceed; the extra UTC candidate invocations exit without changing data. Sundays remain skipped.
 
 ## Deployment checklist
 

@@ -21,8 +21,9 @@ The public matcher keeps the production-style workflow visible while avoiding pr
 | `ADOPTION_RAW_IMPORT_SHEET` | Raw shift-report tab. Default: `Adoption_Check` |
 | `ADOPTION_EXPECTED_SHEET` | Expected workers tab. Default: `EXPECTED_DRIVERS` |
 | `ADOPTION_ALIAS_SHEET` | Alias table tab. Default: `ALIAS_TABLE` |
-| `ADOPTION_TIME_ZONE` | Reporting timezone. Default example: `Etc/UTC` |
-| `ADOPTION_RUN_HOUR` | Reporting run hour. Default example: `18` |
+| `ADOPTION_TIME_ZONE` | Reporting timezone. Default: `Europe/Berlin` |
+| `ADOPTION_RUN_HOUR` | Final daily report hour. Default: `22` |
+| `ADOPTION_RUN_MINUTE` | Final daily report minute. Default: `30` |
 | `ADOPTION_SKIP_WEEKDAYS` | Comma-separated weekday numbers to skip |
 | `ADOPTION_PER_RECIPIENT_EMAIL_ENABLED` | Enables production report email |
 | `ADOPTION_EMAIL_RECIPIENTS` | Approved recipient allowlist |

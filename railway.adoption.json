@@ -5,7 +5,7 @@
     "buildCommand": "node --check scripts/mentor-adoption-worker.mjs"
   },
   "deploy": {
-    "cronSchedule": "0 18 * * 1-6",
+    "cronSchedule": "15,30 16,17,20,21 * * 1-6",
     "restartPolicyType": "NEVER",
     "startCommand": "npm run adoption:run -- --run-mode=production"
   }

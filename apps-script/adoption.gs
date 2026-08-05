@@ -1,12 +1,18 @@
 const ADOPTION_SPREADSHEET_ID_PROPERTY = "ADOPTION_SPREADSHEET_ID";
 const ADOPTION_TIME_ZONE_PROPERTY = "ADOPTION_TIME_ZONE";
 const ADOPTION_RUN_HOUR_PROPERTY = "ADOPTION_RUN_HOUR";
+const ADOPTION_RUN_MINUTE_PROPERTY = "ADOPTION_RUN_MINUTE";
 const ADOPTION_SKIP_WEEKDAYS_PROPERTY = "ADOPTION_SKIP_WEEKDAYS";
 const ADOPTION_RAW_IMPORT_SHEET_PROPERTY = "ADOPTION_RAW_IMPORT_SHEET";
 const ADOPTION_EXPECTED_SHEET_PROPERTY = "ADOPTION_EXPECTED_SHEET";
-const ADOPTION_DEFAULT_TIME_ZONE = "Etc/UTC";
-const ADOPTION_DEFAULT_RUN_HOUR = 18;
+const ADOPTION_DEFAULT_TIME_ZONE = "Europe/Berlin";
+const ADOPTION_DEFAULT_OPERATIONAL_RUN_HOUR = 18;
+const ADOPTION_DEFAULT_OPERATIONAL_RUN_MINUTE = 15;
+const ADOPTION_DEFAULT_FINAL_RUN_HOUR = 22;
+const ADOPTION_DEFAULT_FINAL_RUN_MINUTE = 30;
 const ADOPTION_DEFAULT_SKIP_WEEKDAYS = "0";
+const ADOPTION_FINAL_SNAPSHOT_TYPE = "final";
+const ADOPTION_OPERATIONAL_SNAPSHOT_TYPE = "operational";
 const ADOPTION_DEFAULT_RAW_IMPORT_SHEET = "Adoption_Check";
 const ADOPTION_DEFAULT_EXPECTED_SHEET = "EXPECTED_DRIVERS";
 const ADOPTION_HEADERS = [
@@ -110,6 +116,7 @@ function doPost(e) {
 
     const serviceDate = String(payload.serviceDate || "");
     const runMode = String(payload.runMode || "");
+    const snapshotType = validateSnapshotType_(payload.snapshotType || ADOPTION_FINAL_SNAPSHOT_TYPE);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) {
       throw new Error("serviceDate must use YYYY-MM-DD format.");
     }
@@ -133,19 +140,24 @@ function doPost(e) {
     const summary = buildAdoptionSummary_(ss, serviceDate);
     summary.generatedAt = new Date().toISOString();
     summary.runMode = runMode;
-    summary.snapshotTime = snapshotTimeLabel_();
+    summary.snapshotType = snapshotType;
+    summary.snapshotTime = snapshotTimeLabel_(snapshotType);
     summary.history = {
       snapshotCreated: false
     };
     if (runMode === "production") {
-      const snapshotCreated = persistAdoptionHistory_(ss, summary);
-      summary.history.snapshotCreated = snapshotCreated;
-      summary.emailSubmission = snapshotCreated
-        ? maybeSendProductionAdoptionEmail_(ss, summary)
-        : {
-          action: "EMAIL_SKIPPED_EXISTING_HISTORY_SNAPSHOT",
-          recipients: []
-        };
+      if (snapshotType === ADOPTION_FINAL_SNAPSHOT_TYPE) {
+        const snapshotCreated = persistAdoptionHistory_(ss, summary);
+        summary.history.snapshotCreated = snapshotCreated;
+        summary.emailSubmission = snapshotCreated
+          ? maybeSendProductionAdoptionEmail_(ss, summary)
+          : {
+            action: "EMAIL_SKIPPED_EXISTING_HISTORY_SNAPSHOT",
+            recipients: []
+          };
+      } else {
+        summary.emailSubmission = maybeSendProductionAdoptionEmail_(ss, summary);
+      }
     }
     attachAdoptionEmail_(summary);
     summary.emailDelivery = getEmailDeliveryLog_(ss, serviceDate);
@@ -188,6 +200,7 @@ function buildAdoptionSignedBody_(payload) {
   return JSON.stringify({
     serviceDate: payload.serviceDate,
     runMode: payload.runMode,
+    snapshotType: payload.snapshotType,
     rows: payload.rows
   });
 }
@@ -196,6 +209,13 @@ function validateRunMode_(runMode) {
   if (["test", "manual", "production"].indexOf(runMode) === -1) {
     throw new Error("runMode must be test, manual or production.");
   }
+}
+
+function validateSnapshotType_(snapshotType) {
+  if ([ADOPTION_OPERATIONAL_SNAPSHOT_TYPE, ADOPTION_FINAL_SNAPSHOT_TYPE].indexOf(snapshotType) === -1) {
+    throw new Error("snapshotType must be operational or final.");
+  }
+  return snapshotType;
 }
 
 function openAdoptionSpreadsheet_() {
@@ -316,12 +336,18 @@ function isSkippedServiceDate_(serviceDate) {
 
 function attachAdoptionEmail_(summary) {
   summary.email = {
-    subject: "eMentor Daily Adoption Report — " + summary.serviceDate,
+    subject: adoptionEmailSubject_(summary),
     textBody: buildAdoptionEmailText_(summary),
     htmlBody: buildAdoptionEmailHtml_(summary),
     recipients: getAdoptionEmailRecipients_()
   };
   return summary;
+}
+
+function adoptionEmailSubject_(summary) {
+  return summary.snapshotType === ADOPTION_OPERATIONAL_SNAPSHOT_TYPE
+    ? "eMentor Operational Snapshot — " + summary.serviceDate + " — 18:15"
+    : "eMentor Final Daily Report — " + summary.serviceDate + " — 22:30";
 }
 
 function getAdoptionEmailRecipients_() {
@@ -364,7 +390,8 @@ function getAdoptionSnapshot_(ss, serviceDate) {
         serviceDate: serviceDate,
         generatedAt: String(row[1] || ""),
         runMode: String(row[2] || "production"),
-        snapshotTime: String(row[3] || snapshotTimeLabel_()),
+        snapshotType: ADOPTION_FINAL_SNAPSHOT_TYPE,
+        snapshotTime: String(row[3] || snapshotTimeLabel_(ADOPTION_FINAL_SNAPSHOT_TYPE)),
         history: {
           snapshotCreated: false,
           reusedExistingSnapshot: true
@@ -544,6 +571,7 @@ function buildAdoptionEmailText_(summary) {
   return [
     "eMentor Daily Adoption Report",
     "Service Date: " + summary.serviceDate,
+    "Snapshot: " + snapshotLabel_(summary.snapshotType),
     "",
     checked + " of " + expected + " expected drivers completed their eMentor Check today (" + formatAdoptionPercent_(adoption) + " overall adoption).",
     "",
@@ -553,7 +581,7 @@ function buildAdoptionEmailText_(summary) {
     "",
     "Generated automatically on",
     formatGeneratedAt_(summary.generatedAt) + " " + getReportingTimeZone_()
-  ].join("\n");
+  ].concat(operationalSnapshotNote_(summary.snapshotType) ? ["", operationalSnapshotNote_(summary.snapshotType)] : []).join("\n");
 }
 
 function formatSiteEmailText_(site, summary) {
@@ -585,6 +613,7 @@ function buildAdoptionEmailHtml_(summary) {
     '<div style="background:#ffffff;border:1px solid #e3e8ee;border-radius:10px;padding:30px;">' +
     '<h1 style="font-size:26px;line-height:1.25;margin:0 0 6px;">eMentor Daily Adoption Report</h1>' +
     '<div style="font-size:14px;color:#5c6773;margin-bottom:10px;">Service Date: <strong>' + escapeAdoptionHtml_(summary.serviceDate) + '</strong></div>' +
+    '<div style="font-size:13px;color:#5c6773;margin-bottom:10px;">Snapshot: <strong>' + escapeAdoptionHtml_(snapshotLabel_(summary.snapshotType)) + '</strong></div>' +
     '<div style="font-size:15px;line-height:1.5;color:#374151;margin-bottom:28px;">' + escapeAdoptionHtml_(executiveSummary) + '</div>' +
     formatSiteEmailHtml_("OVERALL", {
       expectedDrivers: overallExpected,
@@ -599,6 +628,7 @@ function buildAdoptionEmailHtml_(summary) {
     '<hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0 24px;">' +
     '<h2 style="font-size:18px;margin:0 0 10px;">Notes</h2>' +
     '<p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 10px;">This report compares today\'s Resource Planning expected drivers with today\'s eMentor Shift Report.</p>' +
+    (operationalSnapshotNote_(summary.snapshotType) ? '<p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 10px;">' + escapeAdoptionHtml_(operationalSnapshotNote_(summary.snapshotType)) + '</p>' : "") +
     '<p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 20px;">Drivers who were planned but did not actually receive a route (for example due to sick leave, no-show or last-minute operational changes) may appear in the missing list and should be verified by the dispatcher before taking action.</p>' +
     '<div style="font-size:12px;line-height:1.5;color:#7b8490;border-top:1px solid #eef1f4;padding-top:16px;">Generated automatically on<br><strong>' +
     escapeAdoptionHtml_(formatGeneratedAt_(summary.generatedAt) + " " + getReportingTimeZone_()) + '</strong></div>' +
@@ -703,9 +733,26 @@ function getReportingTimeZone_() {
   return getScriptProperty_(ADOPTION_TIME_ZONE_PROPERTY, ADOPTION_DEFAULT_TIME_ZONE);
 }
 
-function getReportingRunHour_() {
-  const value = Number(getScriptProperty_(ADOPTION_RUN_HOUR_PROPERTY, String(ADOPTION_DEFAULT_RUN_HOUR)));
-  return Number.isFinite(value) ? value : ADOPTION_DEFAULT_RUN_HOUR;
+function getSnapshotRunHour_(snapshotType) {
+  const fallback = snapshotType === ADOPTION_OPERATIONAL_SNAPSHOT_TYPE
+    ? ADOPTION_DEFAULT_OPERATIONAL_RUN_HOUR
+    : ADOPTION_DEFAULT_FINAL_RUN_HOUR;
+  const propertyFallback = snapshotType === ADOPTION_FINAL_SNAPSHOT_TYPE
+    ? getScriptProperty_(ADOPTION_RUN_HOUR_PROPERTY, String(fallback))
+    : String(fallback);
+  const value = Number(propertyFallback);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function getSnapshotRunMinute_(snapshotType) {
+  const fallback = snapshotType === ADOPTION_OPERATIONAL_SNAPSHOT_TYPE
+    ? ADOPTION_DEFAULT_OPERATIONAL_RUN_MINUTE
+    : ADOPTION_DEFAULT_FINAL_RUN_MINUTE;
+  const propertyFallback = snapshotType === ADOPTION_FINAL_SNAPSHOT_TYPE
+    ? getScriptProperty_(ADOPTION_RUN_MINUTE_PROPERTY, String(fallback))
+    : String(fallback);
+  const value = Number(propertyFallback);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function getSkippedWeekdays_() {
@@ -715,6 +762,18 @@ function getSkippedWeekdays_() {
     .filter(function(value) { return Number.isInteger(value) && value >= 0 && value <= 6; });
 }
 
-function snapshotTimeLabel_() {
-  return ("0" + getReportingRunHour_()).slice(-2) + ":00 " + getReportingTimeZone_();
+function snapshotTimeLabel_(snapshotType) {
+  return ("0" + getSnapshotRunHour_(snapshotType)).slice(-2) + ":" + ("0" + getSnapshotRunMinute_(snapshotType)).slice(-2) + " " + getReportingTimeZone_();
+}
+
+function snapshotLabel_(snapshotType) {
+  return snapshotType === ADOPTION_OPERATIONAL_SNAPSHOT_TYPE
+    ? "Operational Snapshot (18:15)"
+    : "Final Daily Report (22:30)";
+}
+
+function operationalSnapshotNote_(snapshotType) {
+  return snapshotType === ADOPTION_OPERATIONAL_SNAPSHOT_TYPE
+    ? "Operational snapshot: later waves, especially SD-C, may still be in progress. The 22:30 Final Daily Report is the official end-of-day snapshot."
+    : "";
 }

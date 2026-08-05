@@ -13,8 +13,10 @@ const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
 loadLocalEnv(path.join(repoRoot, ".env"));
 loadLocalEnv(path.join(repoRoot, ".env.local"));
 
-const DEFAULT_REPORTING_TIME_ZONE = process.env.REPORTING_TIME_ZONE || "Etc/UTC";
+const DEFAULT_REPORTING_TIME_ZONE = process.env.REPORTING_TIME_ZONE || "Europe/Berlin";
 process.env.TZ = DEFAULT_REPORTING_TIME_ZONE;
+const FINAL_SNAPSHOT_TYPE = "final";
+const OPERATIONAL_SNAPSHOT_TYPE = "operational";
 
 require.extensions[".ts"] = function compileTypescript(module, filename) {
   const source = readFileSync(filename, "utf8");
@@ -38,6 +40,7 @@ export async function runMentorAdoptionWorker({
   validateRunMode(runMode);
   const schedule = reportingScheduleConfig();
   const current = reportingDateTime(now, schedule.timeZone);
+  const reportSchedule = selectReportSchedule(current, schedule, force);
   if (!force && schedule.skipWeekdays.has(current.weekday)) {
     const skipped = {
       action: "SKIPPED_CONFIGURED_WEEKDAY",
@@ -46,9 +49,9 @@ export async function runMentorAdoptionWorker({
     console.log(JSON.stringify(skipped, null, 2));
     return skipped;
   }
-  if (!force && current.hour !== schedule.runHour) {
+  if (!reportSchedule) {
     const skipped = {
-      action: "SKIPPED_OUTSIDE_CONFIGURED_RUN_HOUR",
+      action: "SKIPPED_OUTSIDE_CONFIGURED_RUN_TIME",
       reportingTime: current.timestamp,
     };
     console.log(JSON.stringify(skipped, null, 2));
@@ -72,11 +75,12 @@ export async function runMentorAdoptionWorker({
   }
 
   const rows = mapShiftRowsToAdoptionImport(shiftRows);
-  const signedBody = buildAppsScriptSignedBody({ serviceDate: current.serviceDate, runMode, rows });
+  const signedBody = buildAppsScriptSignedBody({ serviceDate: current.serviceDate, runMode, rows, snapshotType: reportSchedule.snapshotType });
   const requestBody = {
     serviceDate: current.serviceDate,
     runMode,
     rows,
+    snapshotType: reportSchedule.snapshotType,
     signature: signAdoptionPayload(signedBody, sharedSecret),
   };
 
@@ -104,7 +108,8 @@ export async function runMentorAdoptionWorker({
     summary?.serviceDate !== current.serviceDate
     || summary?.runMode !== runMode
     || !summary?.generatedAt
-    || summary?.snapshotTime !== snapshotTimeLabel(schedule)
+    || summary?.snapshotType !== reportSchedule.snapshotType
+    || summary?.snapshotTime !== snapshotTimeLabel(reportSchedule, schedule.timeZone)
     || !summary?.sites?.SITE_A
     || !summary?.sites?.SITE_B
   ) {
@@ -143,6 +148,7 @@ export function buildAdoptionEmail(summary) {
   return [
     "eMentor Daily Adoption Report",
     `Service Date: ${summary.serviceDate}`,
+    `Snapshot: ${snapshotLabel(summary.snapshotType)}`,
     "",
     "OVERALL",
     `- Expected Drivers: ${overallExpected}`,
@@ -162,9 +168,10 @@ export function buildAdoptionEmail(summary) {
     "",
     "Note:",
     "This report compares today's Resource Planning expected drivers with today's eMentor Shift Report.",
+    operationalSnapshotNote(summary.snapshotType),
     "",
     "Drivers who were planned but did not actually receive a route (for example due to sick leave, no-show or last-minute operational changes) may appear in the missing list and should be verified by the dispatcher before taking action.",
-  ].join("\n");
+  ].filter((line) => line !== null).join("\n");
 }
 
 export function buildAdoptionEmailHtml(summary) {
@@ -182,6 +189,7 @@ export function buildAdoptionEmailHtml(summary) {
     <div style="background:#ffffff;border:1px solid #e3e8ee;border-radius:10px;padding:30px;">
       <h1 style="font-size:26px;line-height:1.25;margin:0 0 6px;">eMentor Daily Adoption Report</h1>
       <div style="font-size:14px;color:#5c6773;margin-bottom:10px;">Service Date: <strong>${escapeHtml(summary.serviceDate)}</strong></div>
+      <div style="font-size:13px;color:#5c6773;margin-bottom:10px;">Snapshot: <strong>${escapeHtml(snapshotLabel(summary.snapshotType))}</strong></div>
       <div style="font-size:15px;line-height:1.5;color:#374151;margin-bottom:28px;">${escapeHtml(executiveSummary)}</div>
       ${formatSiteEmailHtml("OVERALL", {
         expectedDrivers: overallExpected,
@@ -196,8 +204,9 @@ export function buildAdoptionEmailHtml(summary) {
       <hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0 24px;">
       <h2 style="font-size:18px;margin:0 0 10px;">Notes</h2>
       <p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 10px;">This report compares today's Resource Planning expected drivers with today's eMentor Shift Report.</p>
+      ${operationalSnapshotNote(summary.snapshotType) ? `<p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 10px;">${escapeHtml(operationalSnapshotNote(summary.snapshotType))}</p>` : ""}
       <p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 20px;">Drivers who were planned but did not actually receive a route (for example due to sick leave, no-show or last-minute operational changes) may appear in the missing list and should be verified by the dispatcher before taking action.</p>
-      <div style="font-size:12px;line-height:1.5;color:#7b8490;border-top:1px solid #eef1f4;padding-top:16px;">Generated automatically on<br><strong>${escapeHtml(formatGeneratedAt(summary.generatedAt))} Etc/UTC</strong></div>
+      <div style="font-size:12px;line-height:1.5;color:#7b8490;border-top:1px solid #eef1f4;padding-top:16px;">Generated automatically on<br><strong>${escapeHtml(formatGeneratedAt(summary.generatedAt))} ${escapeHtml(process.env.REPORTING_TIME_ZONE || DEFAULT_REPORTING_TIME_ZONE)}</strong></div>
     </div>
   </div>
 </body>
@@ -225,6 +234,7 @@ export function buildAppsScriptSignedBody(payload) {
   return JSON.stringify({
     serviceDate: payload.serviceDate,
     runMode: payload.runMode,
+    snapshotType: payload.snapshotType,
     rows: payload.rows,
   });
 }
@@ -253,6 +263,7 @@ export function reportingDateTime(date, timeZone = DEFAULT_REPORTING_TIME_ZONE) 
   const weekday = new Date(`${serviceDate}T12:00:00Z`).getUTCDay();
   return {
     hour: Number(values.hour),
+    minute: Number(values.minute),
     serviceDate,
     timestamp: `${serviceDate}T${values.hour}:${values.minute}:${values.second}[${timeZone}]`,
     weekday,
@@ -270,21 +281,42 @@ export function serviceDayBoundsMs(serviceDate) {
 }
 
 export function reportingScheduleConfig() {
-  const runHour = Number(process.env.REPORTING_RUN_HOUR || 18);
   const skipWeekdays = String(process.env.REPORTING_SKIP_WEEKDAYS || "0")
     .split(",")
     .map((value) => Number(value.trim()))
     .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6);
 
   return {
-    runHour: Number.isInteger(runHour) ? runHour : 18,
+    runs: [
+      configuredReportTime(OPERATIONAL_SNAPSHOT_TYPE, "REPORTING_OPERATIONAL_RUN_HOUR", "REPORTING_OPERATIONAL_RUN_MINUTE", 18, 15),
+      configuredReportTime(FINAL_SNAPSHOT_TYPE, "REPORTING_FINAL_RUN_HOUR", "REPORTING_FINAL_RUN_MINUTE", 22, 30),
+    ],
     skipWeekdays: new Set(skipWeekdays),
     timeZone: process.env.REPORTING_TIME_ZONE || DEFAULT_REPORTING_TIME_ZONE,
   };
 }
 
-function snapshotTimeLabel(schedule) {
-  return `${String(schedule.runHour).padStart(2, "0")}:00 ${schedule.timeZone}`;
+function configuredReportTime(snapshotType, hourEnvName, minuteEnvName, defaultHour, defaultMinute) {
+  const legacyHour = snapshotType === FINAL_SNAPSHOT_TYPE ? process.env.REPORTING_RUN_HOUR : undefined;
+  const legacyMinute = snapshotType === FINAL_SNAPSHOT_TYPE ? process.env.REPORTING_RUN_MINUTE : undefined;
+  const runHour = Number(process.env[hourEnvName] || legacyHour || defaultHour);
+  const runMinute = Number(process.env[minuteEnvName] || legacyMinute || defaultMinute);
+  return {
+    snapshotType,
+    runHour: Number.isInteger(runHour) ? runHour : defaultHour,
+    runMinute: Number.isInteger(runMinute) ? runMinute : defaultMinute,
+  };
+}
+
+function selectReportSchedule(current, schedule, force) {
+  const matched = schedule.runs.find((run) => current.hour === run.runHour && current.minute === run.runMinute);
+  if (matched) return matched;
+  if (force) return schedule.runs.find((run) => run.snapshotType === FINAL_SNAPSHOT_TYPE);
+  return null;
+}
+
+function snapshotTimeLabel(reportSchedule, timeZone) {
+  return `${String(reportSchedule.runHour).padStart(2, "0")}:${String(reportSchedule.runMinute).padStart(2, "0")} ${timeZone}`;
 }
 
 function createMentorClient() {
@@ -315,6 +347,18 @@ function requiredSiteSummary(summary, site) {
     throw new Error(`Invalid adoption summary: missing ${site} or serviceDate.`);
   }
   return result;
+}
+
+function snapshotLabel(snapshotType) {
+  return snapshotType === OPERATIONAL_SNAPSHOT_TYPE
+    ? "Operational Snapshot (18:15)"
+    : "Final Daily Report (22:30)";
+}
+
+function operationalSnapshotNote(snapshotType) {
+  return snapshotType === OPERATIONAL_SNAPSHOT_TYPE
+    ? "Operational snapshot: later waves, especially SD-C, may still be in progress. The 22:30 Final Daily Report is the official end-of-day snapshot."
+    : null;
 }
 
 function formatSiteEmail(site, summary) {

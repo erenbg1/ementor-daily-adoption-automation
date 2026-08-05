@@ -20,6 +20,7 @@ No production credentials, private database files, production Google Sheet IDs, 
 - Identity dictionary learning, confirmation, and conflict quarantine.
 - ADOPTION_HISTORY normalization for dashboard persistence.
 - Daily adoption automation through Apps Script, Google Sheets, Railway, and GmailApp.
+- Two production schedules: an 18:15 Europe/Berlin operational snapshot and a 22:30 Europe/Berlin final daily report after all operational waves have finished.
 - Tests for matching, identity learning, log-history conversion, Apps Script behavior, and worker behavior.
 
 ## Architecture

@@ -186,14 +186,19 @@ function berlinToday() {
   }).format(new Date());
 }
 
-function postAdoption(runtime: ReturnType<typeof buildRuntime>, rows: unknown[][], runMode: "test" | "manual" | "production") {
+function postAdoption(
+  runtime: ReturnType<typeof buildRuntime>,
+  rows: unknown[][],
+  runMode: "test" | "manual" | "production",
+  snapshotType = "final",
+) {
   const serviceDate = berlinToday();
-  const signedBody = JSON.stringify({ serviceDate, runMode, rows });
+  const signedBody = JSON.stringify({ serviceDate, runMode, snapshotType, rows });
   const signature = createHmac("sha256", runtime.secret)
     .update(Buffer.from(signedBody, "utf8").toString("base64"))
     .digest("hex");
   return runtime.context.doPost({
-    postData: { contents: JSON.stringify({ serviceDate, runMode, rows, signature }) },
+    postData: { contents: JSON.stringify({ serviceDate, runMode, snapshotType, rows, signature }) },
   });
 }
 
@@ -248,7 +253,8 @@ describe("Adoption Apps Script adoption endpoint", () => {
     expect(summary).toMatchObject({
       serviceDate,
       runMode: "manual",
-      snapshotTime: "18:00 Etc/UTC",
+      snapshotType: "final",
+      snapshotTime: "22:30 Europe/Berlin",
       sites: {
         SITE_A: {
           adoptionRate: 0.5,
@@ -298,7 +304,7 @@ describe("Adoption Apps Script adoption endpoint", () => {
     expect(["EMAIL_SKIPPED_DISABLED", "EMAIL_SKIPPED_CONFIGURED_WEEKDAY"]).toContain(productionSummary.emailSubmission.action);
     expect(productionSummary.emailSubmission.recipients).toEqual([]);
     expect(runtime.gmailAppCalls).toHaveLength(0);
-    expect(productionSummary.email.subject).toBe(`eMentor Daily Adoption Report — ${serviceDate}`);
+    expect(productionSummary.email.subject).toBe(`eMentor Final Daily Report — ${serviceDate} — 22:30`);
     expect(productionSummary.email.recipients.map((recipient: { email: string }) => recipient.email)).toEqual([
       "ops-lead@example.com",
       "dispatcher@example.com",
@@ -319,7 +325,7 @@ describe("Adoption Apps Script adoption endpoint", () => {
     expect(firstRecord).toMatchObject({
       0: serviceDate,
       2: "production",
-      3: "18:00 Etc/UTC",
+      3: "22:30 Europe/Berlin",
       4: 3,
       5: 1,
       6: 2,
@@ -327,6 +333,31 @@ describe("Adoption Apps Script adoption endpoint", () => {
       12: JSON.stringify(["Bob Missing"]),
       14: JSON.stringify([]),
     });
+  });
+
+  it("sends operational production email without writing ADOPTION_HISTORY", () => {
+    const runtime = buildRuntime({ emailEnabled: true });
+    const serviceDate = berlinToday();
+    const response = postAdoption(
+      runtime,
+      [["Ada", "Lovelace", "", "", "", "", "", "", false, "", "", "SITE_A"]],
+      "production",
+      "operational",
+    );
+    const summary = JSON.parse(response.text);
+
+    expect(runtime.sheets.ADOPTION_HISTORY).toBeUndefined();
+    expect(summary).toMatchObject({
+      serviceDate,
+      runMode: "production",
+      snapshotType: "operational",
+      snapshotTime: "18:15 Europe/Berlin",
+      history: { snapshotCreated: false },
+    });
+    expect(summary.email.subject).toBe(`eMentor Operational Snapshot — ${serviceDate} — 18:15`);
+    expect(summary.email.htmlBody).toContain("Operational snapshot");
+    expect(summary.email.htmlBody).toContain("SD-C");
+    expect(runtime.gmailAppCalls).toHaveLength(3);
   });
 
   it("sorts missing names in email output and applies configured skipped weekdays", () => {
@@ -397,7 +428,7 @@ describe("Adoption Apps Script adoption endpoint", () => {
 
     expect(snapshot.serviceDate).toBe(serviceDate);
     expect(snapshot.history).toMatchObject({ reusedExistingSnapshot: true });
-    expect(snapshot.email.subject).toBe(`eMentor Daily Adoption Report — ${serviceDate}`);
+    expect(snapshot.email.subject).toBe(`eMentor Final Daily Report — ${serviceDate} — 22:30`);
     expect(snapshot.email.htmlBody).toContain("eMentor Daily Adoption Report");
     expect(snapshot.sites.SITE_A.expectedDrivers).toBe(2);
   });

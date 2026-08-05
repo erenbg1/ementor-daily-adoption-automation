@@ -43,10 +43,13 @@ Real production endpoint paths, payload details, credentials, and authentication
 The worker and Apps Script support configurable schedule values:
 
 - `REPORTING_TIME_ZONE`
-- `REPORTING_RUN_HOUR`
+- `REPORTING_OPERATIONAL_RUN_HOUR`
+- `REPORTING_OPERATIONAL_RUN_MINUTE`
+- `REPORTING_FINAL_RUN_HOUR`
+- `REPORTING_FINAL_RUN_MINUTE`
 - `REPORTING_SKIP_WEEKDAYS`
 
-The defaults in `.env.example` are safe examples and should be changed for each deployment.
+The default production targets are 18:15 and 22:30 Europe/Berlin, with Sundays skipped. Railway cron runs the DST-safe UTC candidate times, and the worker guard proceeds only when the local Berlin time is exactly one of the configured report times. The 18:15 operational snapshot sends email but does not write `ADOPTION_HISTORY`; the 22:30 final daily report is the only run that writes `ADOPTION_HISTORY`.
 
 ## Public-release boundary
 
