@@ -84,12 +84,7 @@ export async function runMentorAdoptionWorker({
     signature: signAdoptionPayload(signedBody, sharedSecret),
   };
 
-  const response = await fetchImpl(webAppUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(requestBody),
-    redirect: "follow",
-  });
+  const response = await postJsonToAppsScript(webAppUrl, requestBody, fetchImpl);
   const responseText = await response.text();
   if (!response.ok) {
     throw new Error(`Apps Script returned HTTP ${response.status}: ${responseText.slice(0, 500)}`);
@@ -117,6 +112,27 @@ export async function runMentorAdoptionWorker({
 
   console.log(JSON.stringify(summary, null, 2));
   return summary;
+}
+
+async function postJsonToAppsScript(url, requestBody, fetchImpl) {
+  const body = JSON.stringify(requestBody);
+  const request = {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+    redirect: "manual",
+  };
+  const response = await fetchImpl(url, request);
+  if (![301, 302, 303, 307, 308].includes(response.status)) {
+    return response;
+  }
+
+  const location = response.headers.get("location");
+  if (!location) {
+    return response;
+  }
+
+  return fetchImpl(location, request);
 }
 
 export function mapShiftRowsToAdoptionImport(rows) {

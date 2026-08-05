@@ -228,6 +228,61 @@ describe("Mentor D0 adoption worker", () => {
     }
   });
 
+  it("reposts the Apps Script JSON body after a Web App redirect", async () => {
+    const previousUrl = process.env.ADOPTION_WEB_APP_URL;
+    const previousSecret = process.env.ADOPTION_SHARED_SECRET;
+    process.env.ADOPTION_WEB_APP_URL = "https://script.google.com/macros/s/example/exec";
+    process.env.ADOPTION_SHARED_SECRET = "test-shared-secret";
+
+    const summary = {
+      generatedAt: "2026-07-31T20:30:05.000Z",
+      runMode: "manual",
+      serviceDate: "2026-07-31",
+      snapshotType: "final",
+      snapshotTime: "22:30 Europe/Berlin",
+      sites: {
+        SITE_A: { expectedDrivers: 1, driversWithCheck: 1 },
+        SITE_B: { expectedDrivers: 1, driversWithCheck: 0 },
+      },
+    };
+    const requests: Array<{ url: string | URL | Request; body?: string; redirect?: RequestRedirect }> = [];
+
+    try {
+      await expect(
+        runMentorAdoptionWorker({
+          now: new Date("2026-07-31T20:30:00.000Z"),
+          mentorClient: {
+            async fetchDailyShiftReport() {
+              return { data: [{ firstName: "Ada", lastName: "Lovelace", location1: "SITE_A" }] };
+            },
+          },
+          fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
+            requests.push({ url, body: String(init?.body || ""), redirect: init?.redirect });
+            if (requests.length === 1) {
+              return new Response("", {
+                headers: { location: "https://script.googleusercontent.com/macros/echo?token=redirected" },
+                status: 302,
+              });
+            }
+            return new Response(JSON.stringify(summary), { status: 200 });
+          },
+        }),
+      ).resolves.toEqual(summary);
+
+      expect(requests).toHaveLength(2);
+      expect(String(requests[0].url)).toContain("script.google.com");
+      expect(String(requests[1].url)).toContain("script.googleusercontent.com");
+      expect(requests[0].redirect).toBe("manual");
+      expect(requests[1].redirect).toBe("manual");
+      expect(requests[1].body).toBe(requests[0].body);
+    } finally {
+      if (previousUrl === undefined) delete process.env.ADOPTION_WEB_APP_URL;
+      else process.env.ADOPTION_WEB_APP_URL = previousUrl;
+      if (previousSecret === undefined) delete process.env.ADOPTION_SHARED_SECRET;
+      else process.env.ADOPTION_SHARED_SECRET = previousSecret;
+    }
+  });
+
   it("accepts legacy production env names and station-shaped Apps Script summaries", async () => {
     const previousUrl = process.env.ADOPTION_WEB_APP_URL;
     const previousSecret = process.env.ADOPTION_SHARED_SECRET;
