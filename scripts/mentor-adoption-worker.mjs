@@ -58,8 +58,8 @@ export async function runMentorAdoptionWorker({
     return skipped;
   }
 
-  const webAppUrl = requiredEnv("ADOPTION_WEB_APP_URL");
-  const sharedSecret = requiredEnv("ADOPTION_SHARED_SECRET");
+  const webAppUrl = requiredEnv("ADOPTION_WEB_APP_URL", "EMENTOR_ADOPTION_WEB_APP_URL");
+  const sharedSecret = requiredEnv("ADOPTION_SHARED_SECRET", "EMENTOR_ADOPTION_SHARED_SECRET");
   const client = mentorClient ?? createMentorClient();
   const bounds = serviceDayBoundsMs(current.serviceDate);
 
@@ -110,8 +110,7 @@ export async function runMentorAdoptionWorker({
     || !summary?.generatedAt
     || summary?.snapshotType !== reportSchedule.snapshotType
     || summary?.snapshotTime !== snapshotTimeLabel(reportSchedule, schedule.timeZone)
-    || !summary?.sites?.SITE_A
-    || !summary?.sites?.SITE_B
+    || summaryLocationEntries(summary).length < 2
   ) {
     throw new Error("Apps Script returned an invalid adoption summary.");
   }
@@ -138,8 +137,7 @@ export function mapShiftRowsToAdoptionImport(rows) {
 }
 
 export function buildAdoptionEmail(summary) {
-  const siteA = requiredSiteSummary(summary, "SITE_A");
-  const siteB = requiredSiteSummary(summary, "SITE_B");
+  const [[siteAName, siteA], [siteBName, siteB]] = requiredLocationEntries(summary);
   const overallExpected = siteA.expectedDrivers + siteB.expectedDrivers;
   const overallChecked = siteA.driversWithCheck + siteB.driversWithCheck;
   const overallMissing = overallExpected - overallChecked;
@@ -158,11 +156,11 @@ export function buildAdoptionEmail(summary) {
     "",
     "--------------------------------",
     "",
-    formatSiteEmail("SITE_A", siteA),
+    formatSiteEmail(siteAName, siteA),
     "",
     "--------------------------------",
     "",
-    formatSiteEmail("SITE_B", siteB),
+    formatSiteEmail(siteBName, siteB),
     "",
     "--------------------------------",
     "",
@@ -175,8 +173,7 @@ export function buildAdoptionEmail(summary) {
 }
 
 export function buildAdoptionEmailHtml(summary) {
-  const siteA = requiredSiteSummary(summary, "SITE_A");
-  const siteB = requiredSiteSummary(summary, "SITE_B");
+  const [[siteAName, siteA], [siteBName, siteB]] = requiredLocationEntries(summary);
   const overallExpected = siteA.expectedDrivers + siteB.expectedDrivers;
   const overallChecked = siteA.driversWithCheck + siteB.driversWithCheck;
   const overallRate = overallExpected ? overallChecked / overallExpected : 0;
@@ -198,9 +195,9 @@ export function buildAdoptionEmailHtml(summary) {
         adoptionRate: overallRate,
       }, false, "#6b7280", "#f3f4f6")}
       <hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0;">
-      ${formatSiteEmailHtml("SITE_A", siteA, true, "#2474c6", "#f2f7fc")}
+      ${formatSiteEmailHtml(siteAName, siteA, true, "#2474c6", "#f2f7fc")}
       <hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0;">
-      ${formatSiteEmailHtml("SITE_B", siteB, true, "#2e7d32", "#f2f8f2")}
+      ${formatSiteEmailHtml(siteBName, siteB, true, "#2e7d32", "#f2f8f2")}
       <hr style="border:0;border-top:1px solid #dfe4ea;margin:30px 0 24px;">
       <h2 style="font-size:18px;margin:0 0 10px;">Notes</h2>
       <p style="font-size:13px;line-height:1.55;color:#5c6773;margin:0 0 10px;">This report compares today's Resource Planning expected drivers with today's eMentor Shift Report.</p>
@@ -341,12 +338,17 @@ function toSheetCell(value) {
   return JSON.stringify(value);
 }
 
-function requiredSiteSummary(summary, site) {
-  const result = summary?.sites?.[site];
-  if (!summary?.serviceDate || !result) {
-    throw new Error(`Invalid adoption summary: missing ${site} or serviceDate.`);
+function summaryLocationEntries(summary) {
+  const locations = summary?.sites || summary?.stations || {};
+  return Object.entries(locations).filter(([, value]) => value && typeof value === "object");
+}
+
+function requiredLocationEntries(summary) {
+  const entries = summaryLocationEntries(summary);
+  if (!summary?.serviceDate || entries.length < 2) {
+    throw new Error("Invalid adoption summary: missing adoption location summaries or serviceDate.");
   }
-  return result;
+  return entries.slice(0, 2);
 }
 
 function snapshotLabel(snapshotType) {
@@ -442,9 +444,11 @@ function formatPercentage(rate) {
   return `${(Number(rate || 0) * 100).toFixed(1)}%`;
 }
 
-function requiredEnv(name) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required.`);
+function requiredEnv(name, legacyName) {
+  const value = process.env[name]?.trim() || (legacyName ? process.env[legacyName]?.trim() : "");
+  if (!value) {
+    throw new Error(legacyName ? `${name} or ${legacyName} is required.` : `${name} is required.`);
+  }
   return value;
 }
 
@@ -473,6 +477,7 @@ function redact(value) {
     process.env.MENTOR_USERNAME,
     process.env.MENTOR_PASSWORD,
     process.env.ADOPTION_SHARED_SECRET,
+    process.env.EMENTOR_ADOPTION_SHARED_SECRET,
   ]) {
     if (secret) redacted = redacted.split(secret).join("<redacted>");
   }

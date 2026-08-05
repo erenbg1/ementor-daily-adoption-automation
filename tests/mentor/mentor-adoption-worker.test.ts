@@ -228,6 +228,61 @@ describe("Mentor D0 adoption worker", () => {
     }
   });
 
+  it("accepts legacy production env names and station-shaped Apps Script summaries", async () => {
+    const previousUrl = process.env.ADOPTION_WEB_APP_URL;
+    const previousSecret = process.env.ADOPTION_SHARED_SECRET;
+    const previousLegacyUrl = process.env.EMENTOR_ADOPTION_WEB_APP_URL;
+    const previousLegacySecret = process.env.EMENTOR_ADOPTION_SHARED_SECRET;
+    delete process.env.ADOPTION_WEB_APP_URL;
+    delete process.env.ADOPTION_SHARED_SECRET;
+    process.env.EMENTOR_ADOPTION_WEB_APP_URL = "https://example.test/adoption";
+    process.env.EMENTOR_ADOPTION_SHARED_SECRET = "legacy-test-shared-secret";
+
+    const summary = {
+      generatedAt: "2026-07-31T20:30:05.000Z",
+      runMode: "manual",
+      serviceDate: "2026-07-31",
+      snapshotType: "final",
+      snapshotTime: "22:30 Europe/Berlin",
+      stations: {
+        STATION_A: { expectedDrivers: 1, driversWithCheck: 1 },
+        STATION_B: { expectedDrivers: 1, driversWithCheck: 0 },
+      },
+    };
+
+    try {
+      const result = await runMentorAdoptionWorker({
+        now: new Date("2026-07-31T20:30:00.000Z"),
+        mentorClient: {
+          async fetchDailyShiftReport() {
+            return { data: [{ firstName: "Ada", lastName: "Lovelace", location1: "STATION_A" }] };
+          },
+        },
+        fetchImpl: async (_url: string | URL | Request, init?: RequestInit) => {
+          const postedBody = JSON.parse(String(init?.body));
+          expect(postedBody.signature).toBe(
+            signAdoptionPayload(
+              JSON.stringify({ serviceDate: postedBody.serviceDate, runMode: "manual", snapshotType: "final", rows: postedBody.rows }),
+              "legacy-test-shared-secret",
+            ),
+          );
+          return new Response(JSON.stringify(summary), { status: 200 });
+        },
+      });
+
+      expect(result).toEqual(summary);
+    } finally {
+      if (previousUrl === undefined) delete process.env.ADOPTION_WEB_APP_URL;
+      else process.env.ADOPTION_WEB_APP_URL = previousUrl;
+      if (previousSecret === undefined) delete process.env.ADOPTION_SHARED_SECRET;
+      else process.env.ADOPTION_SHARED_SECRET = previousSecret;
+      if (previousLegacyUrl === undefined) delete process.env.EMENTOR_ADOPTION_WEB_APP_URL;
+      else process.env.EMENTOR_ADOPTION_WEB_APP_URL = previousLegacyUrl;
+      if (previousLegacySecret === undefined) delete process.env.EMENTOR_ADOPTION_SHARED_SECRET;
+      else process.env.EMENTOR_ADOPTION_SHARED_SECRET = previousLegacySecret;
+    }
+  });
+
   it("runs the operational snapshot at 18:15 Berlin without treating it as the final history snapshot", async () => {
     const previousUrl = process.env.ADOPTION_WEB_APP_URL;
     const previousSecret = process.env.ADOPTION_SHARED_SECRET;
