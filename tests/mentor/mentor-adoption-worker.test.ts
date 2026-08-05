@@ -335,6 +335,62 @@ describe("Mentor D0 adoption worker", () => {
     }
   });
 
+  it("still runs when Railway starts the operational cron one minute late", async () => {
+    const previousUrl = process.env.ADOPTION_WEB_APP_URL;
+    const previousSecret = process.env.ADOPTION_SHARED_SECRET;
+    process.env.ADOPTION_WEB_APP_URL = "https://example.test/adoption";
+    process.env.ADOPTION_SHARED_SECRET = "test-shared-secret";
+
+    const summary = {
+      generatedAt: "2026-07-31T16:16:05.000Z",
+      history: { snapshotCreated: false },
+      runMode: "production",
+      serviceDate: "2026-07-31",
+      snapshotType: "operational",
+      snapshotTime: "18:15 Europe/Berlin",
+      sites: {
+        SITE_A: { expectedDrivers: 1, driversWithCheck: 1 },
+        SITE_B: { expectedDrivers: 1, driversWithCheck: 0 },
+      },
+    };
+
+    try {
+      const result = await runMentorAdoptionWorker({
+        now: new Date("2026-07-31T16:16:23.000Z"),
+        runMode: "production",
+        mentorClient: {
+          async fetchDailyShiftReport() {
+            return { data: [{ firstName: "Ada", lastName: "Lovelace", location1: "SITE_A" }] };
+          },
+        },
+        fetchImpl: async (_url: string | URL | Request, init?: RequestInit) => {
+          const postedBody = JSON.parse(String(init?.body));
+          expect(postedBody.snapshotType).toBe("operational");
+          return new Response(JSON.stringify(summary), { status: 200 });
+        },
+      });
+
+      expect(result).toEqual(summary);
+    } finally {
+      if (previousUrl === undefined) delete process.env.ADOPTION_WEB_APP_URL;
+      else process.env.ADOPTION_WEB_APP_URL = previousUrl;
+      if (previousSecret === undefined) delete process.env.ADOPTION_SHARED_SECRET;
+      else process.env.ADOPTION_SHARED_SECRET = previousSecret;
+    }
+  });
+
+  it("still skips unrelated cron candidates outside the grace window", async () => {
+    await expect(
+      runMentorAdoptionWorker({
+        now: new Date("2026-07-31T16:31:17.000Z"),
+        runMode: "production",
+      }),
+    ).resolves.toMatchObject({
+      action: "SKIPPED_OUTSIDE_CONFIGURED_RUN_TIME",
+      reportingTime: "2026-07-31T18:31:17[Europe/Berlin]",
+    });
+  });
+
   it("does not add a separate Railway email provider step to production results", async () => {
     const previousUrl = process.env.ADOPTION_WEB_APP_URL;
     const previousSecret = process.env.ADOPTION_SHARED_SECRET;

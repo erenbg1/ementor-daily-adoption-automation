@@ -31,6 +31,7 @@ flowchart LR
 | `REPORTING_OPERATIONAL_RUN_MINUTE` | No | Operational snapshot minute. Default: `15` |
 | `REPORTING_FINAL_RUN_HOUR` | No | Final daily report hour. Default: `22` |
 | `REPORTING_FINAL_RUN_MINUTE` | No | Final daily report minute. Default: `30` |
+| `REPORTING_RUN_GRACE_MINUTES` | No | Minutes after a configured report time during which a delayed Railway cron start may still run. Default: `5` |
 | `REPORTING_SKIP_WEEKDAYS` | No | Comma-separated weekday numbers, where `0` is the first day of the week in JavaScript date handling |
 
 ## Apps Script properties
@@ -71,7 +72,7 @@ Railway cron is configured as:
 15,30 16,17,20,21 * * 1-6
 ```
 
-Railway evaluates cron in UTC, so the worker also has a Berlin-time guard. Only invocations that are exactly 18:15 or 22:30 Europe/Berlin proceed; the extra UTC candidate invocations exit without changing data. Sundays remain skipped.
+Railway evaluates cron in UTC, so the worker also has a Berlin-time guard. Invocations proceed only when they start within the configured grace window after 18:15 or 22:30 Europe/Berlin; the extra UTC candidate invocations exit without changing data. Sundays remain skipped.
 
 ## Deployment checklist
 

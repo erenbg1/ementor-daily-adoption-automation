@@ -48,8 +48,9 @@ The worker and Apps Script support configurable schedule values:
 - `REPORTING_FINAL_RUN_HOUR`
 - `REPORTING_FINAL_RUN_MINUTE`
 - `REPORTING_SKIP_WEEKDAYS`
+- `REPORTING_RUN_GRACE_MINUTES`
 
-The default production targets are 18:15 and 22:30 Europe/Berlin, with Sundays skipped. Railway cron runs the DST-safe UTC candidate times, and the worker guard proceeds only when the local Berlin time is exactly one of the configured report times. The 18:15 operational snapshot sends email but does not write `ADOPTION_HISTORY`; the 22:30 final daily report is the only run that writes `ADOPTION_HISTORY`.
+The default production targets are 18:15 and 22:30 Europe/Berlin, with Sundays skipped. Railway cron runs the DST-safe UTC candidate times, and the worker guard proceeds when the local Berlin time is within the configured grace window after one of the report times. This prevents harmless Railway cron start delays from causing a missed report. The 18:15 operational snapshot sends email but does not write `ADOPTION_HISTORY`; the 22:30 final daily report is the only run that writes `ADOPTION_HISTORY`.
 
 ## Public-release boundary
 

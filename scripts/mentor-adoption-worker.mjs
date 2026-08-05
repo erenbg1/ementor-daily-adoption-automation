@@ -288,9 +288,15 @@ export function reportingScheduleConfig() {
       configuredReportTime(OPERATIONAL_SNAPSHOT_TYPE, "REPORTING_OPERATIONAL_RUN_HOUR", "REPORTING_OPERATIONAL_RUN_MINUTE", 18, 15),
       configuredReportTime(FINAL_SNAPSHOT_TYPE, "REPORTING_FINAL_RUN_HOUR", "REPORTING_FINAL_RUN_MINUTE", 22, 30),
     ],
+    runGraceMinutes: configuredRunGraceMinutes(),
     skipWeekdays: new Set(skipWeekdays),
     timeZone: process.env.REPORTING_TIME_ZONE || DEFAULT_REPORTING_TIME_ZONE,
   };
+}
+
+function configuredRunGraceMinutes() {
+  const runGraceMinutes = Number(process.env.REPORTING_RUN_GRACE_MINUTES || 5);
+  return Number.isInteger(runGraceMinutes) && runGraceMinutes >= 0 ? runGraceMinutes : 5;
 }
 
 function configuredReportTime(snapshotType, hourEnvName, minuteEnvName, defaultHour, defaultMinute) {
@@ -306,7 +312,12 @@ function configuredReportTime(snapshotType, hourEnvName, minuteEnvName, defaultH
 }
 
 function selectReportSchedule(current, schedule, force) {
-  const matched = schedule.runs.find((run) => current.hour === run.runHour && current.minute === run.runMinute);
+  const currentMinuteOfDay = current.hour * 60 + current.minute;
+  const matched = schedule.runs.find((run) => {
+    const runMinuteOfDay = run.runHour * 60 + run.runMinute;
+    const minutesAfterScheduledRun = currentMinuteOfDay - runMinuteOfDay;
+    return minutesAfterScheduledRun >= 0 && minutesAfterScheduledRun <= schedule.runGraceMinutes;
+  });
   if (matched) return matched;
   if (force) return schedule.runs.find((run) => run.snapshotType === FINAL_SNAPSHOT_TYPE);
   return null;
