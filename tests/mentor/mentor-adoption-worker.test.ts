@@ -228,7 +228,7 @@ describe("Mentor D0 adoption worker", () => {
     }
   });
 
-  it("reposts the Apps Script JSON body after a Web App redirect", async () => {
+  it("reads the Apps Script output URL after a Web App redirect", async () => {
     const previousUrl = process.env.ADOPTION_WEB_APP_URL;
     const previousSecret = process.env.ADOPTION_SHARED_SECRET;
     process.env.ADOPTION_WEB_APP_URL = "https://script.google.com/macros/s/example/exec";
@@ -245,7 +245,7 @@ describe("Mentor D0 adoption worker", () => {
         SITE_B: { expectedDrivers: 1, driversWithCheck: 0 },
       },
     };
-    const requests: Array<{ url: string | URL | Request; body?: string; redirect?: RequestRedirect }> = [];
+    const requests: Array<{ url: string | URL | Request; body?: string; method?: string; redirect?: RequestRedirect }> = [];
 
     try {
       await expect(
@@ -257,7 +257,7 @@ describe("Mentor D0 adoption worker", () => {
             },
           },
           fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-            requests.push({ url, body: String(init?.body || ""), redirect: init?.redirect });
+            requests.push({ url, body: String(init?.body || ""), method: init?.method, redirect: init?.redirect });
             if (requests.length === 1) {
               return new Response("", {
                 headers: { location: "https://script.googleusercontent.com/macros/echo?token=redirected" },
@@ -272,9 +272,11 @@ describe("Mentor D0 adoption worker", () => {
       expect(requests).toHaveLength(2);
       expect(String(requests[0].url)).toContain("script.google.com");
       expect(String(requests[1].url)).toContain("script.googleusercontent.com");
+      expect(requests[0].method).toBe("POST");
+      expect(requests[1].method).toBe("GET");
       expect(requests[0].redirect).toBe("manual");
-      expect(requests[1].redirect).toBe("manual");
-      expect(requests[1].body).toBe(requests[0].body);
+      expect(requests[1].redirect).toBe("follow");
+      expect(requests[1].body).toBe("");
     } finally {
       if (previousUrl === undefined) delete process.env.ADOPTION_WEB_APP_URL;
       else process.env.ADOPTION_WEB_APP_URL = previousUrl;

@@ -132,7 +132,10 @@ async function postJsonToAppsScript(url, requestBody, fetchImpl) {
     return response;
   }
 
-  return fetchImpl(location, request);
+  return fetchImpl(location, {
+    method: "GET",
+    redirect: "follow",
+  });
 }
 
 export function mapShiftRowsToAdoptionImport(rows) {
